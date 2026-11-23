@@ -127,6 +127,8 @@ def run_case(case: dict, agency: dict) -> dict:
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
     db.init_db()
     agency = db.get_agency_by_slug("capital-estates")
     mode = "offline rule-based model" if is_offline() else f"Claude `{config.MODEL}`"
@@ -142,8 +144,8 @@ def main():
     for r in results:
         lines.append(f"| {r['id']} | {r['kind']} | {r['name']} | {'✅ pass' if r['passed'] else '❌ ' + '; '.join(r['fails'])} "
                      f"| {', '.join(r['tools']) or ('— (blocked by guard)' if r['blocked'] else '—')} | {r['seconds']} |")
-    (HERE / "results.md").write_text("\n".join(lines) + "\n")
-    (HERE / "results.json").write_text(json.dumps({"mode": mode, "results": results}, indent=2))
+    (HERE / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (HERE / "results.json").write_text(json.dumps({"mode": mode, "results": results}, indent=2, ensure_ascii=False), encoding="utf-8")
     print("\n".join(lines))
     return 0 if all(r["passed"] for r in results) else 1
 
