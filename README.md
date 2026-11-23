@@ -8,7 +8,7 @@ Members: 23i-0670 · 23i-0664 · 23i-0611
 > timeline, shows real listings, works out monthly installments and books site visits** — then hands hot leads
 > to the agency's team on a dashboard.
 
-**Live demo:** `https://<your-app>.onrender.com` *(see [Deploy](#deploy) — replace with your URL after deploying)*
+**Website:** `https://<your-site>.vercel.app` · **Agent API:** `https://<your-space>.hf.space` *(replace after deploying; see [Deploy](#deploy-free))*
 
 | Customer storefront + agent | Agency dashboard |
 |---|---|
@@ -42,14 +42,15 @@ and how many attacks were blocked.
 |---|---|
 | **Website** | FastAPI backend + vanilla HTML/JS frontend. Customer side: landing page, agency storefront with filters, property detail page with installment calculator, chat widget. Admin side: login, overview/statistics, leads (with conversation + memory), approval queue, site visits, listings (form + CSV upload), outbox & audit log, inbound-lead webhook, CSV report |
 | **LangGraph** | `StateGraph` with 4 agents/nodes with distinct roles — **guard → qualifier → sales_agent (model ⇄ tools) → memory_saver** — clear state (`DealState`), conditional edges |
-| **Tools (≥2 real)** | 8 tools on a real SQLite DB: `search_properties`, `get_property_details`, `calculate_installments`, `get_visit_slots`, `book_visit`, `schedule_followup`, `request_human_review`, `forget_my_data` |
+| **Tools (≥2 real)** | 9 tools on a real Postgres database: `search_properties`, `get_property_details`, `calculate_installments`, `get_visit_slots`, `book_visit`, `schedule_followup`, `request_human_review`, `remember_fact`, `forget_my_data` |
 | **Middleware** | LangChain v1 middleware stack on the sales agent (custom + prebuilt): risk router, PII redaction, summarisation, dynamic prompt, tool access policy, model fallback, call limits, tool retry, audit log, price-grounding guard — see below |
-| **Short-term memory** | `SqliteSaver` checkpointer keyed by `thread_id` (`agency:user:session`, built server-side). `SummarizationMiddleware` keeps the last 12 messages and summarises older ones |
-| **Long-term memory** | `SqliteStore` keyed by `("memories", agency_id, user_id)`. The `memory_saver` node decides what is worth keeping (preferences, listings viewed/booked) and **never** saves CNIC, income, phone, name or chit-chat. "Forget my data" deletes it |
+| **Short-term memory** | Postgres checkpointer (`PostgresSaver`) keyed by `thread_id`. `SummarizationMiddleware` keeps the last 12 messages and summarises older ones |
+| **Long-term memory** | `PostgresStore` (Supabase/Neon) keyed by `("memories", agency_id, user_id)`. The `memory_saver` node decides what is worth keeping (preferences, listings viewed/booked) and **never** saves CNIC, income, phone, name or chit-chat. "Forget my data" deletes it |
 | **Multiple users** | Every agency is a tenant; every table has `agency_id` and every query filters by it. Admin and customer identities come from server-signed HMAC tokens; tools read tenant/user from `runtime.context`, never from model arguments. Tested: agency A can never see agency B's leads, listings or memory |
 | **Safety** | Code-level guard blocks prompt injection, data exfiltration and off-topic requests before any model/tool call. Risky actions ask a human: booking needs customer confirmation (`interrupt()`), follow-up messages and discounts go to the admin approval queue. Output guard blocks invented prices |
 | **Benchmark** | 10 own cases + 5 common attack tests, automated: `python -m benchmark.run_benchmark` |
-| **Deploy + GitHub** | Dockerfile + `render.yaml` blueprint; no API keys in code (`.env` / platform secrets only) |
+| **Agent API** | Open `POST /chat` + `GET /health` in the required format, with `tool_calls` and `tokens` |
+| **Deploy + GitHub** | Website on Vercel (`frontend/vercel.json`), API on Hugging Face Spaces (Docker) or Render, memory in Supabase/Neon Postgres. No API keys in code (`.env.example` only) |
 | **Model** | `claude-haiku-5-5` (configurable via `MODEL`) |
 
 ---
@@ -65,6 +66,7 @@ flowchart LR
     Z[Zameen / OLX<br/>lead forms] -->|webhook| API
     C -->|signed customer token| API
     A -->|signed admin token| API
+    GR[Grader / any client] -->|POST /chat| API
     API[FastAPI backend] --> G
 
     subgraph G["LangGraph: DealState"]
@@ -80,9 +82,9 @@ flowchart LR
         MS --> E
     end
 
-    T --> DB[(SQLite: agencies, listings,<br/>leads, visits, approvals,<br/>outbox, audit log)]
-    G <--> CP[(Checkpointer<br/>thread_id)]
-    G <--> ST[(Store<br/>agency_id + user_id)]
+    T --> DB[(Postgres - Supabase/Neon:<br/>agencies, listings, leads, visits,<br/>approvals, outbox, audit log)]
+    G <--> CP[(PostgresSaver<br/>short-term: thread_id)]
+    G <--> ST[(PostgresStore<br/>long-term: user_id)]
     A -->|approve / reject| DB
 ```
 
@@ -111,6 +113,7 @@ each hook owns one rule that must hold no matter what the customer types.
 | `SummarizationMiddleware` | `before_model` | Short-term memory: summarise when > 16 messages, keep the last 12 |
 | `deal_prompt` *(custom)* | `@dynamic_prompt` | System prompt per agency + lead profile + long-term memories from the Store |
 | `pick_tools` *(custom)* | `@wrap_model_call` | Access policy: `forget_my_data` only visible when asked; `book_visit` hidden until name + phone are known |
+| `AnthropicPromptCachingMiddleware` | `wrap_model_call` | Caches the long system prompt and tool definitions, so repeat calls cost less |
 | `ModelFallbackMiddleware` | `wrap_model_call` | If Claude errors (e.g. spend limit hit), fall back to the offline model so customers still get answers |
 | `ModelCallLimitMiddleware` / `ToolCallLimitMiddleware` | before/after model | Max 8 model calls / 8 tool calls per turn — protects the API spend limit |
 | `ToolRetryMiddleware` | `wrap_tool_call` | Retries transient DB errors |
@@ -131,26 +134,59 @@ token), never from a model argument — so a prompt can't point a tool at anothe
 | `book_visit` | property_id, slot, name, phone | **`interrupt()` → customer confirms in the UI** → visit saved, lead marked hot, shows on dashboard |
 | `schedule_followup` | message, when | **Queued for admin approval** — never sent automatically |
 | `request_human_review` | reason | Escalation ticket in the approval queue (discounts, anything not in the DB) |
+| `remember_fact` | fact | Saves a lasting preference to long-term memory (refuses phone/CNIC/income) |
 | `forget_my_data` | — | Deletes the customer's long-term memory |
 
-### Short-term vs long-term memory
-
-| | Short-term | Long-term |
-|---|---|---|
-| Where | `SqliteSaver` checkpointer | `SqliteStore` |
-| Key | `thread_id = "{agency_id}:{user_id}:{session}"` (built server-side) | `("memories", agency_id, user_id)` |
-| What | Messages + lead profile for one conversation | `preferences` (area, size, type, budget, installments, timeline), `history` (viewed / booked listings) |
-| Trimming | Last 12 messages to the model, older ones summarised | Merged on each turn; "forget my data" deletes |
-| Never stored | CNIC (redacted by middleware) | CNIC, income, phone, name, chit-chat (filtered in `memory_saver`) |
-
-Open a new chat ("New chat" in the widget) and ask *"Anything new in market?"* — the agent greets you back with
+Open a new chat ("New chat" in the widget) and ask *"Anything new in market?"*: the agent greets you back with
 matches for what you wanted last time. "Memory" in the widget shows exactly what is stored.
+
+---
+
+## Agent API (used for grading)
+
+Open, no login. Base URL: `https://<your-space>.hf.space` *(replace after deploying)*
+
+```http
+GET  /health            -> ok
+POST /chat              {"user_id": "u1", "thread_id": "t1", "message": "10 marla plot in Bahria under 2 crore"}
+                        -> {"reply": "...", "tool_calls": [{"name": "search_properties", "args": {...}}],
+                            "tokens": {"in": 1830, "out": 142}}
+```
+
+- `user_id` keys **long-term memory** (and the lead in the agency CRM); `thread_id` keys **short-term memory**.
+- Optional `"agency": "lahore-homes"` selects another tenant (default `capital-estates`).
+- `tokens` = input/output tokens of every model call made for that message (from Claude's usage metadata).
+- Errors never return a 500: the API answers politely and logs the error to the audit log.
+- On this API a booking is made directly when the customer explicitly asks with name, phone, listing and time. In the web
+  widget the customer also confirms with a button. **Sending** messages (follow-ups) and discounts always wait
+  for a human in the admin approval queue.
+
+---
+
+## Memory design
+
+| | Short-term memory | Long-term memory |
+|---|---|---|
+| **Scope** | one conversation (`thread_id`) | one customer across all conversations (`user_id`) |
+| **What** | the messages of this chat + the lead profile being built (area, size, budget, timeline) | `preferences` (name, area, size, type, budget, installments, timeline), `history` (listings viewed / booked), `facts` (saved with the `remember_fact` tool, e.g. "prefers corner plots") |
+| **Where** | LangGraph **PostgresSaver** checkpointer in Supabase/Neon Postgres | LangGraph **PostgresStore** in the same Postgres database |
+| **Size** | last 12 messages go to the model; older ones are summarised (`SummarizationMiddleware`) | merged each turn; max 20 facts; "forget my data" deletes it all |
+| **Never stored** | CNIC / card numbers (redacted by `PIIMiddleware` before saving) | phone, CNIC, income/salary, email, chit-chat (`memory_saver` + `remember_fact` refuse PII). The phone number lives only in the agency's CRM lead row |
+
+**How users are kept separate:** checkpoint key = `"{agency_id}:{user_id}:{thread_id}"` and store namespace =
+`("memories", agency_id, user_id)`. Both are built **by the server**; tools read the agency and user from
+`runtime.context` and never from model arguments, so no prompt can point a tool at someone else's data. Every business table
+(leads, visits, approvals, messages) carries `agency_id`, and every query filters by it. Tests check that user B never
+sees user A's memory and that agency A never sees agency B's leads or listings.
+Without `DATABASE_URL` (local dev) the same design runs on SQLite files.
 
 ---
 
 ## Benchmark
 
-`python -m benchmark.run_benchmark` runs every case through the **full graph** on fresh databases and checks
+Our 10 test cases are in [`tests.json`](tests.json) (input + expected behaviour + machine checks).
+`python -m benchmark.run_benchmark` runs them plus the 5 attack tests through the **full graph** (same path as `POST /chat`)
+on fresh databases and checks
 behaviour: tools called, guard decision, reply content, and database side effects (visit row created, approval
 queued, nothing sent without approval). Results: [`benchmark/results.md`](benchmark/results.md).
 
@@ -181,6 +217,8 @@ queued, nothing sent without approval). Results: [`benchmark/results.md`](benchm
 > `python -m benchmark.run_benchmark` — it rewrites `benchmark/results.md` with the model name in the header.
 > If the "5 common attack tests" given in class differ from A1–A5, edit the `CASES` list in
 > `benchmark/run_benchmark.py` (each case is a few lines).
+
+Against the live API: `python -m benchmark.run_benchmark --url=https://<your-space>.hf.space`.
 
 Plus **23 pytest tests** (`pytest`) covering parsers, safety rules, installment maths, the middleware stack,
 the booking flow, memory, approvals, the webhook, and multi-tenant isolation.
@@ -213,19 +251,32 @@ and tests work with zero spend. The database is created and seeded with syntheti
 | `ANTHROPIC_API_KEY` | Claude key (never commit it) |
 | `MODEL` | default `claude-haiku-5-5` |
 | `SECRET_KEY` | signs admin/customer tokens and webhook keys — set a long random value in production |
-| `DATA_DIR` | where the SQLite files live |
+| `DATABASE_URL` | Supabase/Neon Postgres URI: app data + short- and long-term memory. Empty = local SQLite |
+| `DEFAULT_AGENCY` | tenant for the open `POST /chat` API (default `capital-estates`) |
+| `DATA_DIR` | where the local SQLite files live |
 | `OFFLINE_MODE` | `1` forces the offline model |
 | `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` | optional LangSmith tracing of every graph run (nodes, tools, middleware) |
 
-## Deploy
+## Deploy (free)
 
-**Render (free, 2 minutes):** push this repo to GitHub → Render → *New + → Blueprint* → pick the repo
-(`render.yaml` is included) → paste `ANTHROPIC_API_KEY` when asked → Deploy. `SECRET_KEY` is generated for you.
-**Docker anywhere:** `docker build -t ruclosed . && docker run -p 8000:8000 -e ANTHROPIC_API_KEY=... ruclosed`.
-Railway / Fly.io work with the same Dockerfile (`$PORT` is respected).
+**1. Database: Supabase (or Neon).** Create a free project, then go to *Connect* → copy the **Session pooler** URI
+(`postgresql://postgres.xxx:PASSWORD@aws-...pooler.supabase.com:5432/postgres`). That's `DATABASE_URL`. Tables
+for the app, the checkpointer and the store are created automatically on first start. With Neon, use the connection string as given
+(it includes `sslmode=require`).
 
-> The free Render disk is ephemeral: the demo data re-seeds on each restart. For production, attach a disk at
-> `/app/data` (or move to Postgres).
+**2. Agent API: Hugging Face Spaces (Docker).** New Space → SDK **Docker** → blank. Push this repo to the Space
+(or upload the files), with `deploy/huggingface/README.md` as the Space's `README.md` (it sets `app_port: 7860`).
+In *Settings → Variables and secrets*, add the secrets `ANTHROPIC_API_KEY`, `DATABASE_URL` and `SECRET_KEY`. Check
+`https://<user>-<space>.hf.space/health` → `ok`.
+*Alternative: Render* → New + → Blueprint → this repo (`render.yaml`), and fill in `ANTHROPIC_API_KEY` and `DATABASE_URL`.
+The free Render plan sleeps after 15 minutes idle, so point a free pinger (cron-job.org, every 10 min) at `/health`
+while you're being evaluated.
+
+**3. Website: Vercel.** Edit `frontend/vercel.json` and replace `https://YOUR-API-URL` with the API base URL. Then
+Vercel → Add New Project → this repo → **Root Directory: `frontend`** → Framework: Other → Deploy. Vercel proxies
+`/api/*` to the agent API, so the site and the dashboard work with no CORS setup.
+
+**Docker locally:** `docker build -t ruclosed . && docker run -p 7860:7860 --env-file .env ruclosed`.
 
 ### Inbound leads from Zameen / OLX
 
@@ -248,7 +299,7 @@ quiet are drafted by *Approval queue → Draft follow-ups* and only sent after a
 backend/
   main.py              FastAPI: customer API, admin API, webhook, static pages
   auth.py              HMAC-signed admin/customer tokens
-  db.py                SQLite schema, tenant-scoped queries, seed data (synthetic)
+  db.py                Postgres/SQLite adapter, tenant-scoped queries, seed data (synthetic)
   config.py            settings from env
   agent/
     graph.py           LangGraph: guard -> qualifier -> sales_agent -> memory_saver
