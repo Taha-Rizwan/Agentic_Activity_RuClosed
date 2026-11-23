@@ -17,6 +17,11 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from backend import config
 from backend.agent import parsing
 
+
+def error_code(result: str):
+    from backend.agent.tools import error_code as _code  # lazy: tools imports llm indirectly
+    return _code(result)
+
 _model = None
 
 
@@ -28,7 +33,7 @@ def get_model():
         else:
             from langchain_anthropic import ChatAnthropic
 
-            _model = ChatAnthropic(model=config.MODEL, temperature=0, max_tokens=600, max_retries=2,
+            _model = ChatAnthropic(model=config.MODEL, max_tokens=600, max_retries=2,
                                    timeout=30, api_key=config.ANTHROPIC_API_KEY)
     return _model
 
@@ -91,7 +96,7 @@ class OfflineDealModel(BaseChatModel):
             return AIMessage(content=self._qualify(human, profile))
         # second step: installments for the top search result if the customer asked for them
         if ("search_properties" in results and "calculate_installments" not in results
-                and profile.get("wants_installments") and not results["search_properties"].startswith("NO_MATCH")):
+                and profile.get("wants_installments") and error_code(results["search_properties"]) != "NO_MATCH"):
             m = re.search(r"#(\d+)", results["search_properties"])
             if m:
                 return AIMessage(content="", tool_calls=[_call("calculate_installments", {
@@ -145,7 +150,7 @@ class OfflineDealModel(BaseChatModel):
         parts = []
         if "search_properties" in r:
             s = r["search_properties"]
-            if s.startswith("NO_MATCH"):
+            if error_code(s) == "NO_MATCH":
                 parts.append("I couldn't find a listing matching that exactly in our database. Would you like me to "
                              "widen the area or budget, or should I log your requirement for an agent?")
             else:
@@ -160,17 +165,18 @@ class OfflineDealModel(BaseChatModel):
                              f"{p.get('property_type') or 'property'} in {p.get('area') or 'your area'}), here's what's available now:\n")
                 parts.append(intro + s)
         if "get_property_details" in r:
-            parts.append(r["get_property_details"].replace("NOT_FOUND: ", ""))
+            d = r["get_property_details"]
+            parts.append(json.loads(d)["message"] if error_code(d) else d)
         if "calculate_installments" in r:
             parts.append("Installment plan: " + r["calculate_installments"])
         if "get_visit_slots" in r:
             parts.append(r["get_visit_slots"] + "\nWhich slot suits you? Please share your name and mobile number too.")
         if "book_visit" in r:
             b = r["book_visit"]
-            if b.startswith("NEED_CONTACT"):
+            if error_code(b) == "NEED_CONTACT":
                 parts.append("To book the visit I need your name and mobile number, please.")
-            elif b.startswith("SLOT_UNAVAILABLE"):
-                parts.append("That time isn't free. " + b.split(". ", 1)[-1])
+            elif error_code(b) == "SLOT_UNAVAILABLE":
+                parts.append("That time isn't free. Free slots: " + ", ".join(json.loads(b).get("free_slots", [])))
             else:
                 parts.append(b.replace("BOOKED: ", "Done! "))
         if "schedule_followup" in r:
@@ -180,7 +186,7 @@ class OfflineDealModel(BaseChatModel):
                          "agent who will get back to you shortly. I can't promise a discount myself.")
         if "forget_my_data" in r:
             parts.append("Done. I've deleted your saved preferences and history.")
-        if "search_properties" in r and not r["search_properties"].startswith("NO_MATCH"):
+        if "search_properties" in r and error_code(r["search_properties"]) != "NO_MATCH":
             parts.append("Would you like to book a site visit for any of these?" if p.get("timeline")
                          else "When are you planning to buy, and would you like to book a site visit?")
         return "\n\n".join(parts) or "Done."

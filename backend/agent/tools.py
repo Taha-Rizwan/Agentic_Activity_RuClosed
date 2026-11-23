@@ -6,7 +6,9 @@
   and schedule_followup only queues a message that an agency admin must approve before it is sent;
 - long-term memory goes through runtime.store under ("memories", agency_id, user_id).
 """
+import json
 from datetime import datetime, timedelta
+from typing import Literal
 
 from langchain.tools import ToolRuntime, tool
 from langgraph.types import interrupt
@@ -16,6 +18,22 @@ from backend.agent import parsing
 from backend.agent.context import DealContext, memory_namespace
 
 SLOT_TIMES = ["11:00", "14:00", "16:00"]
+PropertyType = Literal["plot", "house", "apartment", "commercial"]
+
+
+def tool_error(code: str, message: str, retryable: bool = False, **extra) -> str:
+    """Lecture 7: a tool failure is an OBSERVATION, not a crash. Same shape for every tool, so the model (and the
+    offline planner) can read the error code, whether a retry makes sense, and what to do next."""
+    return json.dumps({"status": "error", "error": code, "message": message, "retryable": retryable, **extra})
+
+
+def error_code(result: str) -> str | None:
+    """Returns the error code of a tool_error() result, or None for a normal result."""
+    try:
+        data = json.loads(result)
+    except (TypeError, ValueError):
+        return None
+    return data.get("error") if isinstance(data, dict) and data.get("status") == "error" else None
 
 
 def _card(p: dict) -> str:
@@ -55,7 +73,7 @@ def installment_plan(price: int, down_payment_pct: float, months: int, annual_ma
 # ── search + details ──
 
 @tool
-def search_properties(runtime: ToolRuntime[DealContext], area: str | None = None, property_type: str | None = None,
+def search_properties(runtime: ToolRuntime[DealContext], area: str | None = None, property_type: PropertyType | None = None,
                       max_price_pkr: int | None = None, min_price_pkr: int | None = None,
                       size_marla: float | None = None, installments_only: bool = False, limit: int = 5) -> str:
     """Search THIS agency's available listings. The ONLY source of prices.
@@ -76,8 +94,8 @@ def search_properties(runtime: ToolRuntime[DealContext], area: str | None = None
         relaxed = ("No listing matches the budget/size. Cheapest real options in that area (outside the stated "
                    "budget/size, tell the customer):\n") if results else ""
     if not results:
-        return ("NO_MATCH: no listing in our database matches those filters. Do not invent one. "
-                "Offer to widen the search or log the requirement for an agent.")
+        return tool_error("NO_MATCH", "No listing in our database matches those filters. Do not invent one. "
+                                      "Offer to widen the search or log the requirement for an agent.")
     return relaxed + "\n".join(_card(p) for p in results)
 
 
@@ -86,7 +104,7 @@ def get_property_details(property_id: int, runtime: ToolRuntime[DealContext]) ->
     """Full details of one listing by its id (e.g. 514 for '#514')."""
     p = db.get_property(runtime.context.agency_id, int(property_id))
     if not p:
-        return f"NOT_FOUND: listing #{property_id} is not in this agency's database."
+        return tool_error("NOT_FOUND", f"Listing #{property_id} is not in this agency's database.", property_id=property_id)
     status = "" if p["status"] == "available" else f" (status: {p['status']})"
     return f"{_card(p)}{status}\n{p.get('description') or ''}"
 
@@ -105,7 +123,7 @@ def calculate_installments(runtime: ToolRuntime[DealContext], property_id: int |
     if property_id:
         p = db.get_property(runtime.context.agency_id, int(property_id))
         if not p:
-            return f"NOT_FOUND: listing #{property_id} is not in this agency's database."
+            return tool_error("NOT_FOUND", f"Listing #{property_id} is not in this agency's database.", property_id=property_id)
         price = p["price"]
         if not p["installments"]:
             return (f"#{p['id']} {p['title']} is cash only ({db.fmt_pkr(price)}); the developer has no "
@@ -115,7 +133,8 @@ def calculate_installments(runtime: ToolRuntime[DealContext], property_id: int |
         price, min_dp, max_m = int(price_pkr), 0, 120
         note.append("(price given by the customer, not a listing)")
     else:
-        return "Need a property_id or a price to calculate installments."
+        return tool_error("MISSING_ARGUMENT", "Need a property_id or a price to calculate installments.",
+                          retryable=True)
     if down_payment_pkr and not down_payment_pct:
         down_payment_pct = 100 * down_payment_pkr / price
     dp = down_payment_pct if down_payment_pct is not None else min_dp or 25
@@ -143,7 +162,7 @@ def get_visit_slots(property_id: int, runtime: ToolRuntime[DealContext]) -> str:
     """Free site-visit slots for a listing over the next 7 days (format 'YYYY-MM-DD HH:MM')."""
     p = db.get_property(runtime.context.agency_id, int(property_id))
     if not p:
-        return f"NOT_FOUND: listing #{property_id} is not in this agency's database."
+        return tool_error("NOT_FOUND", f"Listing #{property_id} is not in this agency's database.", property_id=property_id)
     slots = available_slots(runtime.context.agency_id, p["id"])
     pretty = [f"{datetime.strptime(s, '%Y-%m-%d %H:%M'):%a %d %b %I:%M %p} ({s})" for s in slots[:9]]
     return f"Free visit slots for #{p['id']} {p['title']}:\n" + "\n".join(pretty)
@@ -157,17 +176,18 @@ def book_visit(property_id: int, slot: str, runtime: ToolRuntime[DealContext],
     ctx = runtime.context
     p = db.get_property(ctx.agency_id, int(property_id))
     if not p:
-        return f"NOT_FOUND: listing #{property_id} is not in this agency's database."
+        return tool_error("NOT_FOUND", f"Listing #{property_id} is not in this agency's database.", property_id=property_id)
     normal = slot if len(slot) == 16 and slot[4] == "-" else parsing.parse_slot(slot)
     free = available_slots(ctx.agency_id, p["id"])
     if not normal or normal not in free:
-        return (f"SLOT_UNAVAILABLE: '{slot}' is not a free slot for #{p['id']}. "
-                f"Free slots: {', '.join(free[:6])}")
+        return tool_error("SLOT_UNAVAILABLE", f"'{slot}' is not a free slot for #{p['id']}. Offer a free slot.",
+                          retryable=True, free_slots=free[:6])
     lead = db.get_lead(ctx.agency_id, ctx.lead_id) or {}
     name = name or lead.get("name")
     phone = phone or lead.get("phone")
     if not name or not phone:
-        return "NEED_CONTACT: ask the customer for their name and mobile number, then call book_visit again."
+        return tool_error("NEED_CONTACT", "Ask the customer for their name and mobile number, then call "
+                                            "book_visit again.", retryable=True)
 
     if ctx.confirm_bookings:
         # Human in the loop: the customer confirms (button in the widget, or "yes" in chat). The run pauses here.
@@ -221,9 +241,10 @@ def remember_fact(fact: str, runtime: ToolRuntime[DealContext]) -> str:
     'overseas Pakistani in Dubai', 'wants to move before Eid'. Never phone numbers, CNIC, income or salary."""
     ctx = runtime.context
     if parsing.contains_pii(fact):
-        return "NOT_SAVED: that contains personal/financial data (phone, CNIC, income, email), which we never store."
+        return tool_error("NOT_SAVED", "That contains personal/financial data (phone, CNIC, income, email), "
+                                       "which we never store.")
     if runtime.store is None:
-        return "NOT_SAVED: memory unavailable."
+        return tool_error("NOT_SAVED", "Memory is unavailable right now.", retryable=True)
     ns = memory_namespace(ctx.agency_id, ctx.user_id)
     facts = runtime.store.get(ns, "facts")
     items = (facts.value.get("items", []) if facts else [])

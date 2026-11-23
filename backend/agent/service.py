@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 
 from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -109,17 +110,37 @@ def chat(agency: dict, user_id: str, session: str, message: str, source: str = "
     cfg = {"configurable": {"thread_id": thread_id}}
     ctx = _context(agency, user_id, lead["id"], thread_id, confirm_bookings)
     db.log_message(agency["id"], lead["id"], thread_id, "user", message)
+    t0 = time.perf_counter()
     with get_usage_metadata_callback() as cb:
-        # A booking is waiting for the customer's yes/no: a plain-text answer resumes it.
-        if _pending(graph.get_state(cfg)):
-            if YES.match(message):
-                graph.invoke(Command(resume={"approved": True}), cfg, context=ctx)
-                return _result(graph, cfg, thread_id, agency["id"], lead["id"], cb.usage_metadata)
-            graph.invoke(Command(resume={"approved": False}), cfg, context=ctx)
-            if NO.match(message) and len(message.split()) <= 3:
-                return _result(graph, cfg, thread_id, agency["id"], lead["id"], cb.usage_metadata)
-        graph.invoke({"messages": [HumanMessage(message[:2000])]}, cfg, context=ctx)
-        return _result(graph, cfg, thread_id, agency["id"], lead["id"], cb.usage_metadata)
+        _run_turn(graph, cfg, ctx, message)
+        result = _result(graph, cfg, thread_id, agency["id"], lead["id"], cb.usage_metadata)
+    _log_run(agency["id"], user_id, thread_id, result, t0)
+    return result
+
+
+def _run_turn(graph, cfg: dict, ctx: DealContext, message: str) -> None:
+    # A booking is waiting for the customer's yes/no: a plain-text answer resumes it.
+    if _pending(graph.get_state(cfg)):
+        if YES.match(message):
+            graph.invoke(Command(resume={"approved": True}), cfg, context=ctx)
+            return
+        graph.invoke(Command(resume={"approved": False}), cfg, context=ctx)
+        if NO.match(message) and len(message.split()) <= 3:
+            return
+    graph.invoke({"messages": [HumanMessage(message[:2000])]}, cfg, context=ctx)
+
+
+def _log_run(agency_id: int, user_id: str, thread_id: str, result: dict, t0: float) -> None:
+    """LLMOps trace (Lectures 3-5): every run records model + prompt/guard/tool versions, tokens, tools and latency."""
+    try:
+        db.log_event(agency_id, user_id, "agent_run", {
+            "model": "offline" if result.get("offline_model") else config.MODEL,
+            "prompt_version": config.PROMPT_VERSION, "guard_version": config.GUARD_VERSION,
+            "tools_version": config.TOOLS_VERSION, "thread_id": thread_id, "tokens": result.get("tokens"),
+            "tools": result.get("tools_used"), "blocked": result.get("block_reason"),
+            "latency_ms": round((time.perf_counter() - t0) * 1000)})
+    except Exception:
+        pass
 
 
 def resume(agency: dict, user_id: str, session: str, approved: bool) -> dict:
