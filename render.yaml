@@ -4,7 +4,7 @@ services:
     name: ruclosed
     runtime: docker
     plan: free
-    healthCheckPath: /api/health
+    healthCheckPath: /health
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false          # paste it in the Render dashboard, never in code
@@ -12,5 +12,7 @@ services:
         value: claude-haiku-5-5
       - key: SECRET_KEY
         generateValue: true
+      - key: DATABASE_URL
+        sync: false          # Supabase / Neon Postgres connection string
       - key: DATA_DIR
         value: /app/data

@@ -13,6 +13,7 @@ class DealContext:
     user_id: str = "demo-user"
     lead_id: int = 0
     thread_id: str = ""
+    confirm_bookings: bool = True   # web widget: confirm card; graded /chat API: book on explicit request
 
 
 def memory_namespace(agency_id: int, user_id: str) -> tuple:

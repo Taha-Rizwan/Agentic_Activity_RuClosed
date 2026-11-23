@@ -28,8 +28,8 @@ def get_model():
         else:
             from langchain_anthropic import ChatAnthropic
 
-            _model = ChatAnthropic(model=config.MODEL, temperature=0, max_tokens=1024, max_retries=2,
-                                   api_key=config.ANTHROPIC_API_KEY)
+            _model = ChatAnthropic(model=config.MODEL, temperature=0, max_tokens=600, max_retries=2,
+                                   timeout=30, api_key=config.ANTHROPIC_API_KEY)
     return _model
 
 

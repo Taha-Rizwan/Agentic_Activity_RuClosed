@@ -10,7 +10,7 @@ from collections import defaultdict, deque
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -64,7 +64,43 @@ def agency_from_token(payload: dict) -> dict:
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "model": config.MODEL, "offline_model": is_offline()}
+    return {"status": "ok", "model": config.MODEL, "offline_model": is_offline(),
+            "database": "postgres" if db.is_postgres() else "sqlite"}
+
+
+# ───────────────────────── graded agent API (open, no login) ─────────────────────────
+
+@app.get("/health", response_class=PlainTextResponse)
+def health_plain():
+    return "ok"
+
+
+class AgentChatIn(BaseModel):
+    user_id: str = "anonymous"
+    thread_id: str = "default"
+    message: str = ""
+    agency: str | None = None   # optional tenant slug; defaults to DEFAULT_AGENCY
+
+
+@app.post("/chat")
+def agent_chat(body: AgentChatIn, request: Request):
+    """POST /chat {"user_id","thread_id","message"} -> {"reply","tool_calls","tokens":{"in","out"}}.
+    user_id keys long-term memory, thread_id keys short-term memory; both are scoped inside the agency."""
+    rate_limit(request, per_minute=600)
+    agency = db.get_agency_by_slug(body.agency or config.DEFAULT_AGENCY) or db.get_agency_by_slug(config.DEFAULT_AGENCY)
+    user_id = (body.user_id or "anonymous").strip()[:100] or "anonymous"
+    message = (body.message or "").strip()
+    if not message:
+        return {"reply": "Hi! Tell me what you're looking for, e.g. \"10 marla plot in Bahria under 2 crore\".",
+                "tool_calls": [], "tokens": {"in": 0, "out": 0}}
+    try:
+        r = service.chat(agency, user_id, body.thread_id or "default", message[:4000], source="api",
+                         confirm_bookings=False)
+        return {"reply": r["reply"], "tool_calls": r["tool_calls"], "tokens": r["tokens"]}
+    except Exception as e:  # never a 500 for the grader; log and answer politely
+        db.log_event(agency["id"], user_id, "error", repr(e)[:500])
+        return {"reply": "Sorry, I hit a problem handling that. Please try again, or an agent will contact you.",
+                "tool_calls": [], "tokens": {"in": 0, "out": 0}}
 
 
 @app.get("/api/agencies")

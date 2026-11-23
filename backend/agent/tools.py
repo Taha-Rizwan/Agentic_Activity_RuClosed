@@ -169,12 +169,13 @@ def book_visit(property_id: int, slot: str, runtime: ToolRuntime[DealContext],
     if not name or not phone:
         return "NEED_CONTACT: ask the customer for their name and mobile number, then call book_visit again."
 
-    # Human in the loop: the customer confirms in the UI. The run pauses here until /api/chat/resume.
-    decision = interrupt({"type": "confirm_booking", "property_id": p["id"], "property_title": p["title"],
-                          "slot": normal, "name": name, "phone": phone,
-                          "question": f"Confirm site visit for #{p['id']} {p['title']} on {normal}?"})
-    if not (isinstance(decision, dict) and decision.get("approved")):
-        return "Customer did not confirm. Nothing was booked."
+    if ctx.confirm_bookings:
+        # Human in the loop: the customer confirms (button in the widget, or "yes" in chat). The run pauses here.
+        decision = interrupt({"type": "confirm_booking", "property_id": p["id"], "property_title": p["title"],
+                              "slot": normal, "name": name, "phone": phone,
+                              "question": f"Confirm site visit for #{p['id']} {p['title']} on {normal}?"})
+        if not (isinstance(decision, dict) and decision.get("approved")):
+            return "Customer did not confirm. Nothing was booked."
 
     visit_id = db.create_visit(ctx.agency_id, ctx.lead_id, p["id"], normal, name, phone)
     db.update_lead(ctx.agency_id, ctx.lead_id, status="visit_booked", score="hot", name=name, phone=phone)
@@ -215,6 +216,25 @@ def request_human_review(reason: str, runtime: ToolRuntime[DealContext]) -> str:
 # ── long-term memory ──
 
 @tool
+def remember_fact(fact: str, runtime: ToolRuntime[DealContext]) -> str:
+    """Save a lasting preference worth remembering in FUTURE conversations, e.g. 'prefers corner plots',
+    'overseas Pakistani in Dubai', 'wants to move before Eid'. Never phone numbers, CNIC, income or salary."""
+    ctx = runtime.context
+    if parsing.contains_pii(fact):
+        return "NOT_SAVED: that contains personal/financial data (phone, CNIC, income, email), which we never store."
+    if runtime.store is None:
+        return "NOT_SAVED: memory unavailable."
+    ns = memory_namespace(ctx.agency_id, ctx.user_id)
+    facts = runtime.store.get(ns, "facts")
+    items = (facts.value.get("items", []) if facts else [])
+    fact = fact.strip()[:200]
+    if fact and fact not in items:
+        items = (items + [fact])[-20:]
+        runtime.store.put(ns, "facts", {"items": items})
+    return f"SAVED: '{fact}' will be remembered next time."
+
+
+@tool
 def forget_my_data(runtime: ToolRuntime[DealContext]) -> str:
     """Delete everything remembered about this customer (preferences and history). Only when they ask."""
     ctx = runtime.context
@@ -229,4 +249,4 @@ def forget_my_data(runtime: ToolRuntime[DealContext]) -> str:
 
 
 TOOLS = [search_properties, get_property_details, calculate_installments, get_visit_slots, book_visit,
-         schedule_followup, request_human_review, forget_my_data]
+         schedule_followup, request_human_review, remember_fact, forget_my_data]

@@ -17,6 +17,7 @@ APP_DB = Path(os.getenv("APP_DB", DATA_DIR / "ruclosed.db"))          # business
 MEMORY_DB = Path(os.getenv("MEMORY_DB", DATA_DIR / "memory.db"))      # LangGraph checkpointer + store
 
 MODEL = os.getenv("MODEL", "claude-haiku-5-5")
+DEFAULT_AGENCY = os.getenv("DEFAULT_AGENCY", "capital-estates")   # tenant used by the open /chat API
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OFFLINE_MODE = os.getenv("OFFLINE_MODE", "0") == "1" or not ANTHROPIC_API_KEY
 

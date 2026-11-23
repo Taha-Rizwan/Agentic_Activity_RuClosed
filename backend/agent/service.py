@@ -1,8 +1,14 @@
-"""Runs the graph for one customer turn. Owns the checkpointer (short-term) and the store (long-term)."""
+"""Runs the graph for one customer turn. Owns the checkpointer (short-term) and the store (long-term).
+
+Production (DATABASE_URL = Supabase / Neon Postgres): PostgresSaver + PostgresStore, survives restarts.
+Development: SQLite files.
+"""
 import os
+import re
 import sqlite3
 import threading
 
+from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.store.sqlite import SqliteStore
@@ -17,17 +23,27 @@ _lock = threading.Lock()
 _graph = None
 _store = None
 
+YES = re.compile(r"^\s*(yes|y|yeah|yep|confirm|confirmed|ok|okay|sure|haan|han|ji|jee|g|book it|go ahead|done)\b", re.I)
+NO = re.compile(r"^\s*(no|n|nope|cancel|nahi|nahin|na|don'?t|stop)\b", re.I)
+
 
 def get_graph():
     global _graph, _store
     with _lock:
         if _graph is None:
-            path = os.getenv("MEMORY_DB", str(config.MEMORY_DB))
-            cp_conn = sqlite3.connect(path, check_same_thread=False)
-            st_conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
-            checkpointer = SqliteSaver(cp_conn)
+            if db.is_postgres():
+                # Production: Supabase / Neon Postgres. Survives restarts and redeploys.
+                from langgraph.checkpoint.postgres import PostgresSaver
+                from langgraph.store.postgres import PostgresStore
+
+                checkpointer = PostgresSaver(db.pg_pool())
+                _store = PostgresStore(db.pg_pool())
+            else:
+                # Development: a local SQLite file.
+                path = os.getenv("MEMORY_DB", str(config.MEMORY_DB))
+                checkpointer = SqliteSaver(sqlite3.connect(path, check_same_thread=False))
+                _store = SqliteStore(sqlite3.connect(path, check_same_thread=False, isolation_level=None))
             checkpointer.setup()
-            _store = SqliteStore(st_conn)
             _store.setup()
             _graph = build_graph(checkpointer=checkpointer, store=_store)
         return _graph
@@ -46,50 +62,64 @@ def reset():
         _store = None
 
 
-def _context(agency: dict, user_id: str, lead_id: int, thread_id: str) -> DealContext:
+def _context(agency: dict, user_id: str, lead_id: int, thread_id: str, confirm: bool = True) -> DealContext:
     return DealContext(agency_id=agency["id"], agency_name=agency["name"], user_id=user_id, lead_id=lead_id,
-                       thread_id=thread_id)
+                       thread_id=thread_id, confirm_bookings=confirm)
 
 
-def _result(graph, config_: dict, thread_id: str, agency_id: int, lead_id: int) -> dict:
-    snap = graph.get_state(config_)
+def _pending(snap):
+    for task in snap.tasks:
+        for intr in task.interrupts:
+            return intr.value
+    return None
+
+
+def _result(graph, cfg: dict, thread_id: str, agency_id: int, lead_id: int, usage: dict | None = None) -> dict:
+    snap = graph.get_state(cfg)
     messages = snap.values.get("messages", [])
     li = last_human_index(messages)
     turn = messages[li + 1:] if li >= 0 else messages
-    tools = [m.name for m in turn if isinstance(m, ToolMessage)]
-    pending = None
-    for task in snap.tasks:
-        for intr in task.interrupts:
-            pending = intr.value
-    reply = ""
-    if not pending:
+    calls = [{"name": c["name"], "args": c.get("args", {})} for m in turn if isinstance(m, AIMessage) for c in m.tool_calls]
+    pending = _pending(snap)
+    if pending:
+        reply = f"{pending.get('question', 'Please confirm.')} Reply \"yes\" to confirm or \"no\" to cancel."
+        if not any(c["name"] == "book_visit" for c in calls):
+            calls.append({"name": "book_visit", "args": {k: pending.get(k) for k in ("property_id", "slot")}})
+    else:
         last = messages[-1] if messages else None
         reply = text_of(last) if isinstance(last, AIMessage) else ""
-        if reply:
-            db.log_message(agency_id, lead_id, thread_id, "assistant", reply)
-    else:
-        if isinstance(pending, dict) and pending.get("type") == "confirm_booking":
-            tools = sorted(set(tools + ["book_visit"]))
+    if reply:
+        db.log_message(agency_id, lead_id, thread_id, "assistant", reply)
+    tin = tout = 0
+    for u in (usage or {}).values():
+        tin += int(u.get("input_tokens", 0) or 0)
+        tout += int(u.get("output_tokens", 0) or 0)
     profile = {k: v for k, v in (snap.values.get("profile") or {}).items() if k not in ("name", "phone")}
-    return {"reply": reply, "interrupt": pending, "tools_used": tools, "thread_id": thread_id,
+    return {"reply": reply, "interrupt": pending, "tool_calls": calls,
+            "tools_used": list(dict.fromkeys(c["name"] for c in calls)), "thread_id": thread_id,
             "blocked": bool(snap.values.get("blocked")), "block_reason": snap.values.get("block_reason") or None,
-            "profile": profile, "offline_model": is_offline()}
+            "profile": profile, "tokens": {"in": tin, "out": tout}, "offline_model": is_offline()}
 
 
-def chat(agency: dict, user_id: str, session: str, message: str, source: str = "website") -> dict:
+def chat(agency: dict, user_id: str, session: str, message: str, source: str = "website",
+         confirm_bookings: bool = True) -> dict:
     graph = get_graph()
     lead = db.get_or_create_lead(agency["id"], user_id, source=source)
     thread_id = thread_key(agency["id"], user_id, session)
     cfg = {"configurable": {"thread_id": thread_id}}
-    # A new message while a booking confirmation is pending counts as "not confirmed".
-    snap = graph.get_state(cfg)
-    if any(t.interrupts for t in snap.tasks):
-        graph.invoke(Command(resume={"approved": False}), cfg,
-                     context=_context(agency, user_id, lead["id"], thread_id))
+    ctx = _context(agency, user_id, lead["id"], thread_id, confirm_bookings)
     db.log_message(agency["id"], lead["id"], thread_id, "user", message)
-    graph.invoke({"messages": [HumanMessage(message[:2000])]}, cfg,
-                 context=_context(agency, user_id, lead["id"], thread_id))
-    return _result(graph, cfg, thread_id, agency["id"], lead["id"])
+    with get_usage_metadata_callback() as cb:
+        # A booking is waiting for the customer's yes/no: a plain-text answer resumes it.
+        if _pending(graph.get_state(cfg)):
+            if YES.match(message):
+                graph.invoke(Command(resume={"approved": True}), cfg, context=ctx)
+                return _result(graph, cfg, thread_id, agency["id"], lead["id"], cb.usage_metadata)
+            graph.invoke(Command(resume={"approved": False}), cfg, context=ctx)
+            if NO.match(message) and len(message.split()) <= 3:
+                return _result(graph, cfg, thread_id, agency["id"], lead["id"], cb.usage_metadata)
+        graph.invoke({"messages": [HumanMessage(message[:2000])]}, cfg, context=ctx)
+        return _result(graph, cfg, thread_id, agency["id"], lead["id"], cb.usage_metadata)
 
 
 def resume(agency: dict, user_id: str, session: str, approved: bool) -> dict:
@@ -97,13 +127,13 @@ def resume(agency: dict, user_id: str, session: str, approved: bool) -> dict:
     lead = db.get_or_create_lead(agency["id"], user_id)
     thread_id = thread_key(agency["id"], user_id, session)
     cfg = {"configurable": {"thread_id": thread_id}}
-    snap = graph.get_state(cfg)
-    if not any(t.interrupts for t in snap.tasks):
+    if not _pending(graph.get_state(cfg)):
         return {**_result(graph, cfg, thread_id, agency["id"], lead["id"]), "reply": "Nothing is waiting for confirmation."}
     db.log_message(agency["id"], lead["id"], thread_id, "user", "[confirmed booking]" if approved else "[declined booking]")
-    graph.invoke(Command(resume={"approved": bool(approved)}), cfg,
-                 context=_context(agency, user_id, lead["id"], thread_id))
-    return _result(graph, cfg, thread_id, agency["id"], lead["id"])
+    with get_usage_metadata_callback() as cb:
+        graph.invoke(Command(resume={"approved": bool(approved)}), cfg,
+                     context=_context(agency, user_id, lead["id"], thread_id))
+        return _result(graph, cfg, thread_id, agency["id"], lead["id"], cb.usage_metadata)
 
 
 def history(agency: dict, user_id: str, session: str) -> list[dict]:
@@ -111,7 +141,7 @@ def history(agency: dict, user_id: str, session: str) -> list[dict]:
     snap = graph.get_state({"configurable": {"thread_id": thread_key(agency["id"], user_id, session)}})
     out = []
     for m in snap.values.get("messages", []):
-        if isinstance(m, HumanMessage):
+        if isinstance(m, HumanMessage) and not text_of(m).startswith("Here is a summary"):
             out.append({"role": "user", "content": text_of(m)})
         elif isinstance(m, AIMessage) and text_of(m) and not m.tool_calls:
             out.append({"role": "assistant", "content": text_of(m)})

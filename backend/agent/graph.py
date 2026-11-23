@@ -42,7 +42,7 @@ class DealState(MessagesState):
     risk: NotRequired[str | None]
 
 
-PREF_KEYS = ["area", "size_marla", "property_type", "budget_max", "budget_min", "wants_installments", "timeline"]
+PREF_KEYS = ["area", "size_marla", "property_type", "budget_max", "budget_min", "wants_installments", "timeline", "name"]
 
 
 def last_human_index(messages) -> int:
@@ -154,7 +154,8 @@ def make_sales_node(agent):
 
 def memory_saver(state: DealState, runtime: Runtime[DealContext]):
     """Decide what is worth remembering across sessions (canvas box 9).
-    SAVE: property preferences and listings viewed/booked.  NEVER SAVE: CNIC, income, phone, name, chit-chat."""
+    SAVE: name (to greet them), property preferences, listings viewed/booked, facts saved via remember_fact.
+    NEVER SAVE: phone, CNIC, income, email, chit-chat. (The phone lives only in the agency's CRM lead row.)"""
     ctx = runtime.context
     messages = state["messages"]
     li = last_human_index(messages)

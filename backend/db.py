@@ -24,14 +24,14 @@ CREATE TABLE IF NOT EXISTS admins (
 CREATE TABLE IF NOT EXISTS properties (
     id INTEGER PRIMARY KEY, agency_id INTEGER NOT NULL REFERENCES agencies(id),
     title TEXT NOT NULL, area TEXT NOT NULL, block TEXT, city TEXT, property_type TEXT NOT NULL,
-    size_marla REAL NOT NULL, price INTEGER NOT NULL, bedrooms INTEGER, description TEXT,
+    size_marla REAL NOT NULL, price BIGINT NOT NULL, bedrooms INTEGER, description TEXT,
     installments INTEGER DEFAULT 0, min_down_payment_pct REAL DEFAULT 25, max_months INTEGER DEFAULT 36,
     status TEXT DEFAULT 'available', created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY, agency_id INTEGER NOT NULL REFERENCES agencies(id), user_id TEXT NOT NULL,
     name TEXT, phone TEXT, source TEXT DEFAULT 'website', status TEXT DEFAULT 'new', score TEXT DEFAULT 'cold',
-    budget_max INTEGER, area TEXT, size_marla REAL, property_type TEXT, timeline TEXT,
+    budget_max BIGINT, area TEXT, size_marla REAL, property_type TEXT, timeline TEXT,
     wants_installments INTEGER DEFAULT 0, last_message TEXT, created_at TEXT, updated_at TEXT,
     UNIQUE(agency_id, user_id)
 );
@@ -67,17 +67,99 @@ def now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+# ── one tiny adapter, two engines ──
+# DATABASE_URL set (Supabase / Neon Postgres) -> Postgres with a connection pool (production).
+# Not set -> a local SQLite file (development, tests). Same SQL for both ("?" placeholders).
+
+def database_url() -> str:
+    return os.getenv("DATABASE_URL", "").strip()
+
+
+def is_postgres() -> bool:
+    return database_url().startswith(("postgres://", "postgresql://"))
+
+
+class Row(dict):
+    """A dict row that also supports row[0] (like sqlite3.Row)."""
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+
+class Cursor:
+    def __init__(self, data, rowcount, lastrowid):
+        self._rows, self.rowcount, self.lastrowid = data, rowcount, lastrowid
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):
+        return self._rows
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class Conn:
+    def __init__(self, raw, pg: bool):
+        self.raw, self.pg = raw, pg
+
+    def execute(self, sql: str, args=()):
+        if self.pg:
+            sql = sql.replace("?", "%s")
+            insert = sql.lstrip().upper().startswith("INSERT") and "RETURNING" not in sql.upper()
+            if insert:
+                sql += " RETURNING id"
+            cur = self.raw.execute(sql, tuple(args))
+            data = [Row(r) for r in cur.fetchall()] if cur.description else []
+            lastrowid = data[0]["id"] if insert and data else None
+            return Cursor([] if insert else data, cur.rowcount, lastrowid)
+        cur = self.raw.execute(sql, tuple(args))
+        data = [Row(dict(r)) for r in cur.fetchall()] if cur.description else []
+        return Cursor(data, cur.rowcount, cur.lastrowid)
+
+    def executescript(self, script: str):
+        for stmt in script.split(";"):
+            if stmt.strip():
+                self.execute(stmt)
+
+
+_pool = None
+
+
+def pg_pool():
+    """Shared by the business tables AND LangGraph's PostgresSaver / PostgresStore."""
+    global _pool
+    if _pool is None:
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+
+        _pool = ConnectionPool(database_url(), min_size=1, max_size=int(os.getenv("DB_POOL_SIZE", "8")), open=True,
+                               kwargs={"autocommit": True, "prepare_threshold": None, "row_factory": dict_row},
+                               check=ConnectionPool.check_connection)
+        import atexit
+
+        atexit.register(_pool.close)
+    return _pool
+
+
 def _db_path():
     return os.getenv("APP_DB", str(config.APP_DB))
 
 
 @contextmanager
 def conn():
+    if is_postgres():
+        with pg_pool().connection() as raw:
+            yield Conn(raw, True)
+        return
     c = sqlite3.connect(_db_path(), check_same_thread=False, timeout=10)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
     try:
-        yield c
+        yield Conn(c, False)
         c.commit()
     finally:
         c.close()
@@ -488,7 +570,7 @@ DEMO_LEADS = [
 
 def init_db(seed: bool = True) -> None:
     with conn() as c:
-        c.executescript(SCHEMA)
+        c.executescript(SCHEMA.replace("INTEGER PRIMARY KEY", "BIGSERIAL PRIMARY KEY") if c.pg else SCHEMA)
         if not seed or c.execute("SELECT COUNT(*) FROM agencies").fetchone()[0]:
             return
         for a in AGENCIES:
@@ -505,11 +587,14 @@ def init_db(seed: bool = True) -> None:
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (*p, now()))
         for (ag, uid, name, phone, src, status, score, budget, area, marla, ptype, timeline, inst, msg, ago) in DEMO_LEADS:
             ts = (datetime.now() - timedelta(days=ago)).strftime("%Y-%m-%d %H:%M:%S")
-            c.execute(
+            cur = c.execute(
                 "INSERT INTO leads (agency_id, user_id, name, phone, source, status, score, budget_max, area, size_marla, "
                 "property_type, timeline, wants_installments, last_message, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (ag, uid, name, phone, src, status, score, budget, area, marla, ptype, timeline, inst, msg, ts, ts))
-            lead_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
+            lead_id = cur.lastrowid
             c.execute("INSERT INTO messages (agency_id, lead_id, thread_id, role, content, created_at) VALUES (?,?,?,?,?,?)",
                       (ag, lead_id, f"{ag}:{uid}:seed", "user", msg, ts))
+        if c.pg:  # explicit ids were inserted: move the sequences past them
+            for table in ("agencies", "properties"):
+                c.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), (SELECT MAX(id) FROM {table}))")
