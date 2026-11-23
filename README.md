@@ -215,6 +215,7 @@ and tests work with zero spend. The database is created and seeded with syntheti
 | `SECRET_KEY` | signs admin/customer tokens and webhook keys — set a long random value in production |
 | `DATA_DIR` | where the SQLite files live |
 | `OFFLINE_MODE` | `1` forces the offline model |
+| `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` | optional LangSmith tracing of every graph run (nodes, tools, middleware) |
 
 ## Deploy
 
