@@ -1,0 +1,56 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	guard(guard)
+	qualifier(qualifier)
+	memory_saver(memory_saver)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> guard;
+	guard -.-> __end__;
+	guard -.-> qualifier;
+	qualifier --> sales_agent\3a__start__;
+	sales_agent\3a__end__ --> memory_saver;
+	memory_saver --> __end__;
+	subgraph sales_agent
+	sales_agent\3a__start__(<p>__start__</p>)
+	sales_agent\3amodel(model)
+	sales_agent\3atools(tools<hr/><small><em>__tools = search_properties, get_property_details, calculate_installments, get_visit_slots, book_visit, schedule_followup, request_human_review, forget_my_data</em></small>)
+	sales_agent\3arisk_router\2ebefore_model(risk_router.before_model)
+	sales_agent\3aPIIMiddleware\5bcnic\5d\2ebefore_model(PIIMiddleware[cnic].before_model)
+	sales_agent\3aPIIMiddleware\5bcnic\5d\2eafter_model(PIIMiddleware[cnic].after_model)
+	sales_agent\3aPIIMiddleware\5bcredit_card\5d\2ebefore_model(PIIMiddleware[credit_card].before_model)
+	sales_agent\3aPIIMiddleware\5bcredit_card\5d\2eafter_model(PIIMiddleware[credit_card].after_model)
+	sales_agent\3aSummarizationMiddleware\2ebefore_model(SummarizationMiddleware.before_model)
+	sales_agent\3aModelCallLimitMiddleware\2ebefore_model(ModelCallLimitMiddleware.before_model)
+	sales_agent\3aModelCallLimitMiddleware\2eafter_model(ModelCallLimitMiddleware.after_model)
+	sales_agent\3aToolCallLimitMiddleware\2eafter_model(ToolCallLimitMiddleware.after_model)
+	sales_agent\3aprice_guard\2eafter_model(price_guard.after_model)
+	sales_agent\3a__end__(<p>__end__</p>)
+	sales_agent\3aModelCallLimitMiddleware\2eafter_model --> sales_agent\3aPIIMiddleware\5bcredit_card\5d\2eafter_model;
+	sales_agent\3aModelCallLimitMiddleware\2ebefore_model -.-> sales_agent\3a__end__;
+	sales_agent\3aModelCallLimitMiddleware\2ebefore_model -.-> sales_agent\3amodel;
+	sales_agent\3aPIIMiddleware\5bcnic\5d\2eafter_model -.-> sales_agent\3a__end__;
+	sales_agent\3aPIIMiddleware\5bcnic\5d\2eafter_model -.-> sales_agent\3arisk_router\2ebefore_model;
+	sales_agent\3aPIIMiddleware\5bcnic\5d\2eafter_model -.-> sales_agent\3atools;
+	sales_agent\3aPIIMiddleware\5bcnic\5d\2ebefore_model -.-> sales_agent\3aPIIMiddleware\5bcredit_card\5d\2ebefore_model;
+	sales_agent\3aPIIMiddleware\5bcnic\5d\2ebefore_model -.-> sales_agent\3a__end__;
+	sales_agent\3aPIIMiddleware\5bcredit_card\5d\2eafter_model --> sales_agent\3aPIIMiddleware\5bcnic\5d\2eafter_model;
+	sales_agent\3aPIIMiddleware\5bcredit_card\5d\2ebefore_model -.-> sales_agent\3aSummarizationMiddleware\2ebefore_model;
+	sales_agent\3aPIIMiddleware\5bcredit_card\5d\2ebefore_model -.-> sales_agent\3a__end__;
+	sales_agent\3aSummarizationMiddleware\2ebefore_model --> sales_agent\3aModelCallLimitMiddleware\2ebefore_model;
+	sales_agent\3aToolCallLimitMiddleware\2eafter_model -.-> sales_agent\3aModelCallLimitMiddleware\2eafter_model;
+	sales_agent\3aToolCallLimitMiddleware\2eafter_model -.-> sales_agent\3a__end__;
+	sales_agent\3a__start__ --> sales_agent\3arisk_router\2ebefore_model;
+	sales_agent\3amodel --> sales_agent\3aprice_guard\2eafter_model;
+	sales_agent\3aprice_guard\2eafter_model --> sales_agent\3aToolCallLimitMiddleware\2eafter_model;
+	sales_agent\3arisk_router\2ebefore_model -.-> sales_agent\3aPIIMiddleware\5bcnic\5d\2ebefore_model;
+	sales_agent\3arisk_router\2ebefore_model -.-> sales_agent\3atools;
+	sales_agent\3atools -.-> sales_agent\3arisk_router\2ebefore_model;
+	end
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

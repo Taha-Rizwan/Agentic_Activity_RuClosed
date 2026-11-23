@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "ruclosed": "./backend/agent/studio.py:graph"
+  },
+  "env": ".env"
+}

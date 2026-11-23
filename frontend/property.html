@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Property details — RUClosed</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar"><div class="wrap">
+    <a class="logo" id="agencyLogo" href="#"><span class="mark">🏠</span><span id="agencyName">Agency</span></a>
+    <nav><a id="backLink" href="#">← All listings</a></nav>
+  </div></header>
+  <main class="wrap">
+    <div class="prop-layout">
+      <section>
+        <div class="prop-hero" id="hero"></div>
+        <div class="card pad" style="margin-top:16px">
+          <span class="badge brand" id="pid"></span>
+          <h1 id="title" style="margin-top:8px"></h1>
+          <div class="muted" id="loc"></div>
+          <div class="price-tag" id="price" style="font-size:28px;font-weight:800;color:var(--brand);margin-top:8px"></div>
+          <div class="kv" id="kv"></div>
+          <p id="desc"></p>
+        </div>
+      </section>
+      <aside class="grid" style="align-content:start">
+        <div class="card pad" id="calcCard">
+          <h3>Installment calculator</h3>
+          <div id="calcBody">
+            <label for="dp">Down payment: <span id="dpV"></span>%</label>
+            <input type="range" id="dp" min="10" max="90" step="5" value="25" />
+            <label for="mo" style="margin-top:10px">Months: <span id="moV"></span></label>
+            <input type="range" id="mo" min="6" max="36" step="6" value="36" />
+            <div class="calc-out" id="calcOut"></div>
+          </div>
+        </div>
+        <div class="card pad">
+          <h3>Next free visit slots</h3>
+          <div class="slot-list" id="slots"></div>
+          <button class="btn primary" style="margin-top:12px;width:100%" id="bookBtn">Book a site visit with the assistant</button>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script src="/assets/app.js"></script>
+  <script src="/assets/chat.js"></script>
+  <script>
+    const slug = RU.slug();
+    const pid = Number(location.pathname.split("/").pop());
+    const $ = id => document.getElementById(id);
+    $("backLink").href = $("agencyLogo").href = "/a/" + slug;
+    RU.api(`/api/a/${slug}`).then(a => { $("agencyName").textContent = a.name; });
+    RU.api(`/api/a/${slug}/properties/${pid}`).then(p => {
+      document.title = p.title + " — " + p.price_text;
+      $("hero").className = "prop-hero t-" + p.property_type; $("hero").textContent = RU.icon(p.property_type);
+      $("pid").textContent = "#" + p.id; $("title").textContent = p.title;
+      $("loc").textContent = `${p.area} · ${p.block || ""} · ${p.city || ""}`;
+      $("price").textContent = p.price_text; $("desc").textContent = p.description || "";
+      $("kv").innerHTML = [["Size", p.size_marla + " marla"], ["Type", p.property_type], ["Bedrooms", p.bedrooms || "—"],
+        ["Status", p.status], ["Plan", p.installments ? `${p.min_down_payment_pct}% down, ${p.max_months} months` : "Cash only"]]
+        .map(([k, v]) => `<div><span>${k}</span><b>${RU.esc(v)}</b></div>`).join("");
+      $("slots").innerHTML = p.next_slots.map(s => `<button class="chip" data-s="${s}">${RU.esc(s)}</button>`).join("");
+      $("slots").onclick = e => { if (e.target.dataset.s) RUChat.open(`Book a visit for #${p.id} on ${e.target.dataset.s}`); };
+      $("bookBtn").onclick = () => RUChat.open(`I want to book a site visit for #${p.id}`);
+      if (!p.installments) { $("calcBody").innerHTML = `<p class="muted">This listing is cash only. Ask the assistant about bank financing.</p>`; return; }
+      $("dp").min = p.min_down_payment_pct; $("dp").value = Math.max(25, p.min_down_payment_pct);
+      $("mo").max = p.max_months; $("mo").value = p.max_months;
+      calc();
+    }).catch(() => { $("title").textContent = "Listing not found"; });
+    async function calc() {
+      $("dpV").textContent = $("dp").value; $("moV").textContent = $("mo").value;
+      const r = await RU.api(`/api/a/${slug}/properties/${pid}/installments?down_payment_pct=${$("dp").value}&months=${$("mo").value}`);
+      if (!r.available) return;
+      $("calcOut").innerHTML = `<div class="muted small">Monthly installment</div><div class="big">${r.text.monthly}</div>
+        <div class="small">Down payment ${r.text.down_payment} · Balance ${r.text.balance} over ${r.months} months</div>`;
+    }
+    $("dp").oninput = calc; $("mo").oninput = calc;
+  </script>
+</body>
+</html>

@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agency Dashboard — RUClosed</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+<div class="admin">
+  <aside class="side">
+    <a class="logo" href="/"><span class="mark">RU</span><span><span class="ru">RU</span>Closed</span></a>
+    <button class="tab active" data-tab="overview">📊 Overview</button>
+    <button class="tab" data-tab="leads">👥 Leads <span class="badge" id="nLeads"></span></button>
+    <button class="tab" data-tab="queue">✅ Approval queue <span class="badge hot" id="nQueue"></span></button>
+    <button class="tab" data-tab="visits">🗓 Site visits <span class="badge" id="nVisits"></span></button>
+    <button class="tab" data-tab="listings">🏘 Listings</button>
+    <button class="tab" data-tab="activity">📨 Outbox &amp; activity</button>
+    <button class="tab" data-tab="settings">⚙ Integrations</button>
+    <div class="foot"><div id="who"></div><a href="#" id="storefront">Open storefront ↗</a><br><a href="#" id="logout">Log out</a></div>
+  </aside>
+
+  <main class="main">
+    <!-- OVERVIEW -->
+    <section data-panel="overview">
+      <div class="toolbar"><h1 class="grow" id="agencyTitle">Overview</h1>
+        <button class="btn" id="dlReport">⬇ Download report (CSV)</button></div>
+      <div class="grid tiles" id="tiles"></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:16px">
+        <div class="card pad"><h3>New leads per day</h3><div class="chart" id="chartDays"></div></div>
+        <div class="card pad"><h3>Lead quality</h3><div id="scoreBar"></div>
+          <h3 style="margin-top:22px">Leads by source</h3><div id="sourceList"></div></div>
+        <div class="card pad"><h3>Revenue this month (RUClosed model)</h3><div id="revenue"></div>
+          <h3 style="margin-top:22px">Agent tool calls</h3><div id="toolList" class="small"></div></div>
+      </div>
+    </section>
+
+    <!-- LEADS -->
+    <section data-panel="leads" class="hidden">
+      <div class="toolbar"><h1 class="grow">Leads</h1>
+        <select id="leadFilter" style="width:auto"><option value="">All scores</option><option>hot</option><option>warm</option><option>cold</option></select></div>
+      <div class="card table-wrap"><table><thead><tr><th>Lead</th><th>Score</th><th>Status</th><th>Wants</th><th>Budget</th><th>Timeline</th><th>Source</th><th>Updated</th></tr></thead>
+        <tbody id="leadRows"></tbody></table></div>
+    </section>
+
+    <!-- QUEUE -->
+    <section data-panel="queue" class="hidden">
+      <div class="toolbar"><h1 class="grow">Approval queue</h1>
+        <button class="btn" id="runFollowups">✍ Draft follow-ups for quiet leads</button></div>
+      <p class="muted">The agent never sends a follow-up or agrees a discount on its own. Everything risky waits here for a human.</p>
+      <div class="grid" id="queueList"></div>
+      <h3 style="margin-top:24px">Decided</h3>
+      <div class="card table-wrap"><table><thead><tr><th>#</th><th>Kind</th><th>Lead</th><th>Message</th><th>Status</th><th>By</th></tr></thead><tbody id="decidedRows"></tbody></table></div>
+    </section>
+
+    <!-- VISITS -->
+    <section data-panel="visits" class="hidden">
+      <h1>Site visits</h1>
+      <div class="card table-wrap"><table><thead><tr><th>When</th><th>Property</th><th>Customer</th><th>Phone</th><th>Status</th><th>Fee</th><th></th></tr></thead>
+        <tbody id="visitRows"></tbody></table></div>
+    </section>
+
+    <!-- LISTINGS -->
+    <section data-panel="listings" class="hidden">
+      <h1>Listings</h1>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+        <form class="card pad grid" id="addForm" style="gap:10px">
+          <h3>Add a listing</h3>
+          <div><label>Title</label><input name="title" required placeholder="10 Marla Plot, Bahria Town Phase 8" /></div>
+          <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+            <div><label>Area</label><input name="area" required placeholder="Bahria Town" /></div>
+            <div><label>Block / phase</label><input name="block" placeholder="Phase 8, Block F" /></div>
+            <div><label>City</label><input name="city" placeholder="Rawalpindi" /></div>
+            <div><label>Type</label><select name="property_type"><option>plot</option><option>house</option><option>apartment</option><option>commercial</option></select></div>
+            <div><label>Size (marla)</label><input name="size_marla" type="number" step="0.5" required /></div>
+            <div><label>Price (PKR)</label><input name="price" type="number" required placeholder="18500000" /></div>
+            <div><label>Bedrooms</label><input name="bedrooms" type="number" /></div>
+            <div><label>Installments?</label><select name="installments"><option value="false">No</option><option value="true">Yes</option></select></div>
+            <div><label>Min down %</label><input name="min_down_payment_pct" type="number" value="25" /></div>
+            <div><label>Max months</label><input name="max_months" type="number" value="36" /></div>
+          </div>
+          <div><label>Description</label><textarea name="description" rows="2"></textarea></div>
+          <button class="btn primary">Add listing</button><div class="err" id="addErr"></div>
+        </form>
+        <form class="card pad grid" id="uploadForm" style="gap:10px;align-content:start">
+          <h3>Upload listings (CSV)</h3>
+          <p class="small muted">Columns: <code>title,area,block,city,property_type,size_marla,price,bedrooms,description,installments,min_down_payment_pct,max_months</code></p>
+          <input type="file" name="file" accept=".csv" required />
+          <button class="btn primary">Upload</button>
+          <a class="small" href="/assets/sample_listings.csv" download>Download a sample CSV</a>
+          <div id="uploadOut" class="small"></div>
+        </form>
+      </div>
+      <div class="card table-wrap" style="margin-top:16px"><table><thead><tr><th>#</th><th>Title</th><th>Area</th><th>Size</th><th>Price</th><th>Plan</th><th>Status</th></tr></thead>
+        <tbody id="propRows"></tbody></table></div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section data-panel="activity" class="hidden">
+      <h1>Outbox &amp; activity</h1>
+      <h3>Messages sent</h3>
+      <div class="card table-wrap"><table><thead><tr><th>When</th><th>Lead</th><th>Channel</th><th>Message</th><th>Approved by</th></tr></thead><tbody id="outRows"></tbody></table></div>
+      <h3 style="margin-top:22px">Audit log (guard blocks, tool calls, decisions)</h3>
+      <div class="card table-wrap"><table><thead><tr><th>When</th><th>Kind</th><th>User</th><th>Detail</th></tr></thead><tbody id="evRows"></tbody></table></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section data-panel="settings" class="hidden">
+      <h1>Integrations</h1>
+      <div class="card pad grid">
+        <h3>Inbound lead webhook (Zameen.com / OLX / Facebook lead forms)</h3>
+        <p class="muted">Point your lead-form automation (Zapier / Make / email parser) here. RUClosed replies to the lead within seconds and the conversation appears under Leads.</p>
+        <pre id="webhook"></pre>
+        <button class="btn" id="testLead" style="justify-self:start">Send a test lead</button>
+        <pre id="testOut" class="hidden"></pre>
+        <h3>Model</h3><p id="modelInfo" class="muted"></p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="dh"><b id="dTitle" class="grow" style="flex:1">Lead</b><button class="btn sm" id="dClose">Close</button></div>
+  <div class="db" id="dBody"></div>
+</div>
+
+<script src="/assets/app.js"></script>
+<script>
+const token = RU.store.get("ru_admin");
+if (!token) location.href = "/admin";
+const $ = id => document.getElementById(id);
+const api = (p, o = {}) => RU.api(p, { ...o, token }).catch(e => { if (e.status === 401 || e.status === 403) { RU.store.del("ru_admin"); location.href = "/admin"; } throw e; });
+let me, leads = [];
+
+document.querySelectorAll(".side .tab").forEach(b => b.onclick = () => show(b.dataset.tab));
+function show(tab) {
+  document.querySelectorAll(".side .tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll("[data-panel]").forEach(p => p.classList.toggle("hidden", p.dataset.panel !== tab));
+  ({ overview: loadOverview, leads: loadLeads, queue: loadQueue, visits: loadVisits, listings: loadListings, activity: loadActivity, settings: loadSettings })[tab]();
+  history.replaceState(null, "", "#" + tab);
+}
+$("logout").onclick = e => { e.preventDefault(); RU.store.del("ru_admin"); location.href = "/admin"; };
+$("dClose").onclick = () => $("drawer").classList.remove("open");
+$("dlReport").onclick = async () => {
+  const res = await fetch("/api/admin/report.csv", { headers: { Authorization: "Bearer " + token } });
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement("a"), { href: url, download: "ruclosed-leads-report.csv" }); a.click();
+};
+
+async function init() {
+  me = await api("/api/admin/me");
+  $("who").textContent = me.email;
+  $("agencyTitle").textContent = me.agency.name + " · Overview";
+  $("storefront").href = "/a/" + me.agency.slug; $("storefront").target = "_blank";
+  show((location.hash || "#overview").slice(1));
+  refreshCounts();
+}
+async function refreshCounts() {
+  const s = await api("/api/admin/stats");
+  $("nLeads").textContent = s.total_leads; $("nQueue").textContent = s.pending_approvals || ""; $("nVisits").textContent = s.visits_booked;
+  return s;
+}
+
+function barChart(el, data) {
+  if (!data.length) { el.innerHTML = '<p class="muted">No leads yet.</p>'; return; }
+  const W = 480, H = 200, pad = 28, max = Math.max(...data.map(d => d.n), 1);
+  const bw = (W - pad * 2) / data.length;
+  const bars = data.map((d, i) => {
+    const w = Math.min(Math.max(bw - 4, 4), 36), h = (H - pad * 2) * d.n / max, x = pad + i * bw + (bw - w) / 2, y = H - pad - h;
+    return `<g class="b" data-t="${d.day}: ${d.n} lead${d.n === 1 ? "" : "s"}">
+      <rect x="${x - 2}" y="${pad}" width="${w + 4}" height="${H - pad * 2}" fill="transparent"/>
+      <path d="M${x},${H - pad} V${y + Math.min(4, h)} Q${x},${y} ${x + Math.min(4, w / 2)},${y} H${x + w - Math.min(4, w / 2)} Q${x + w},${y} ${x + w},${y + Math.min(4, h)} V${H - pad} Z" fill="var(--series-1)"/>
+      <text x="${x + w / 2}" y="${H - 10}" text-anchor="middle" font-size="10" fill="var(--muted)">${d.day.slice(5)}</text></g>`;
+  }).join("");
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="New leads per day">
+    <line x1="${pad}" x2="${W - pad}" y1="${H - pad}" y2="${H - pad}" stroke="var(--border)"/>
+    <text x="${pad}" y="${pad - 8}" font-size="10" fill="var(--muted)">max ${max}</text>${bars}</svg><div class="tip"></div>`;
+  const tip = el.querySelector(".tip");
+  el.querySelectorAll("g.b").forEach(g => {
+    g.addEventListener("mousemove", e => { const r = el.getBoundingClientRect(); tip.style.display = "block"; tip.textContent = g.dataset.t; tip.style.left = (e.clientX - r.left + 10) + "px"; tip.style.top = (e.clientY - r.top - 28) + "px"; });
+    g.addEventListener("mouseleave", () => tip.style.display = "none");
+  });
+}
+
+async function loadOverview() {
+  const s = await refreshCounts();
+  const tile = (v, l) => `<div class="card pad tile"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  $("tiles").innerHTML = tile(s.total_leads, "Total leads") + tile(s.leads_by_score.hot || 0, "🔥 Hot leads") +
+    tile(s.visits_booked, "Site visits booked") + tile(s.conversion_pct + "%", "Lead → visit conversion") +
+    tile(s.pending_approvals, "Waiting for approval") + tile(s.guard_blocks, "🛡 Attacks / off-topic blocked") +
+    tile(s.conversations, "Conversations") + tile(s.listings_available, "Live listings");
+  barChart($("chartDays"), s.leads_by_day);
+  const total = Math.max(1, s.total_leads);
+  const sc = [["hot", "var(--series-2)"], ["warm", "var(--series-1)"], ["cold", "var(--series-3)"]];
+  $("scoreBar").innerHTML = `<div class="stack" role="img" aria-label="Lead quality">${sc.map(([k, c]) => (s.leads_by_score[k] ? `<div title="${k}: ${s.leads_by_score[k]}" style="width:${100 * s.leads_by_score[k] / total}%;background:${c}"></div>` : "")).join("")}</div>
+    <div class="legend">${sc.map(([k, c]) => `<span><i style="background:${c}"></i>${k} ${s.leads_by_score[k] || 0}</span>`).join("")}</div>`;
+  $("sourceList").innerHTML = Object.entries(s.leads_by_source).map(([k, v]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span>${RU.esc(k)}</span><b>${v}</b></div>`).join("") || '<p class="muted">—</p>';
+  $("revenue").innerHTML = `<div style="display:flex;justify-content:space-between"><span>Subscription</span><b>PKR ${s.revenue.subscription_pkr.toLocaleString()}</b></div>
+    <div style="display:flex;justify-content:space-between"><span>${s.visits_booked} visits × PKR 1,000</span><b>PKR ${s.revenue.visit_fees_pkr.toLocaleString()}</b></div>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span>Total billed</span><b>PKR ${s.revenue.total_pkr.toLocaleString()}</b></div>`;
+  $("toolList").innerHTML = Object.entries(s.tool_calls).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div style="display:flex;justify-content:space-between;padding:3px 0"><code>${RU.esc(k)}</code><b>${v}</b></div>`).join("") || '<p class="muted">No tool calls yet.</p>';
+}
+
+async function loadLeads() {
+  leads = await api("/api/admin/leads");
+  renderLeads();
+}
+function renderLeads() {
+  const f = $("leadFilter").value;
+  $("leadRows").innerHTML = leads.filter(l => !f || l.score === f).map(l => `<tr class="click" data-id="${l.id}">
+    <td><b>${RU.esc(l.name || "Anonymous visitor")}</b><div class="small muted">${RU.esc(l.phone || "")} · ${l.messages} msgs</div></td>
+    <td><span class="badge ${l.score}">${l.score}</span></td><td>${RU.esc(l.status)}</td>
+    <td>${[l.size_marla ? l.size_marla + " marla" : "", l.property_type || "", l.area ? "in " + l.area : "", l.wants_installments ? "· inst." : ""].join(" ")}</td>
+    <td>${l.budget_max ? RU.pkr(l.budget_max) : "—"}</td><td>${RU.esc(l.timeline || "—")}</td>
+    <td>${RU.esc(l.source)}</td><td class="small muted">${RU.esc(l.updated_at)}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">No leads yet.</td></tr>';
+}
+$("leadFilter").onchange = renderLeads;
+$("leadRows").onclick = async e => {
+  const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+  const d = await api("/api/admin/leads/" + tr.dataset.id);
+  const l = d.lead;
+  $("dTitle").textContent = (l.name || "Anonymous visitor") + " · lead #" + l.id;
+  $("dBody").innerHTML = `
+    <div><span class="badge ${l.score}">${l.score}</span> <span class="badge">${RU.esc(l.status)}</span> <span class="badge">${RU.esc(l.source)}</span></div>
+    <div class="small">${RU.esc(l.phone || "no phone yet")} · budget ${l.budget_max ? RU.pkr(l.budget_max) : "?"} · timeline ${RU.esc(l.timeline || "?")}</div>
+    <div class="toolbar"><select id="stSel" style="width:auto">${["new", "qualified", "visit_booked", "closed", "lost"].map(s => `<option ${s === l.status ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <button class="btn sm" id="stSave">Update status</button></div>
+    <h3>Long-term memory (by user_id)</h3><pre>${RU.esc(JSON.stringify(d.memory, null, 1)) || "{}"}</pre>
+    <h3>Visits</h3>${d.visits.map(v => `<div class="small">🗓 ${RU.esc(v.slot)} — #${v.property_id} ${RU.esc(v.property_title)} (${v.status})</div>`).join("") || '<div class="small muted">None</div>'}
+    <h3>Conversation</h3>
+    ${d.messages.map(m => `<div class="msg ${m.role === "user" ? "user" : "bot"}" style="max-width:100%">${RU.esc(m.content)}</div>`).join("") || '<div class="muted">No messages.</div>'}`;
+  $("stSave").onclick = async () => { await api("/api/admin/leads/" + l.id, { method: "PATCH", body: { status: $("stSel").value } }); loadLeads(); };
+  $("drawer").classList.add("open");
+};
+
+async function loadQueue() {
+  const items = await api("/api/admin/approvals");
+  const pending = items.filter(i => i.status === "pending");
+  $("queueList").innerHTML = pending.map(i => `<div class="card approval" data-id="${i.id}">
+      <div><span class="badge ${i.kind === "followup" ? "brand" : "hot"}">${i.kind === "followup" ? "Follow-up message to send" : "Needs a human"}</span>
+        <b> #${i.id}</b> · ${RU.esc(i.lead_name || "lead #" + (i.lead_id || "?"))} <span class="small muted">· ${RU.esc(i.reason || "")} · ${RU.esc(i.created_at)}</span></div>
+      ${i.kind === "followup" ? `<textarea>${RU.esc(i.message)}</textarea>` : `<div>${RU.esc(i.message)}</div>`}
+      <div class="toolbar" style="margin:0"><button class="btn primary sm" data-a="1">${i.kind === "followup" ? "Approve &amp; send" : "Mark handled"}</button>
+        <button class="btn sm danger" data-a="0">${i.kind === "followup" ? "Reject" : "Dismiss"}</button></div></div>`).join("") ||
+    '<div class="card pad muted">Nothing waiting. 🎉</div>';
+  $("decidedRows").innerHTML = items.filter(i => i.status !== "pending").map(i => `<tr><td>${i.id}</td><td>${i.kind}</td><td>${RU.esc(i.lead_name || i.lead_id || "")}</td>
+    <td class="small">${RU.esc(i.message)}</td><td><span class="badge ${i.status === "rejected" ? "" : "ok"}">${i.status}</span></td><td class="small">${RU.esc(i.decided_by || "")}</td></tr>`).join("");
+  refreshCounts();
+}
+$("queueList").onclick = async e => {
+  const a = e.target.dataset.a; if (a === undefined) return;
+  const card = e.target.closest(".approval"); const ta = card.querySelector("textarea");
+  await api("/api/admin/approvals/" + card.dataset.id, { body: { approve: a === "1", message: ta ? ta.value : null } });
+  loadQueue();
+};
+$("runFollowups").onclick = async () => {
+  const r = await api("/api/admin/followups/run?hours=24", { method: "POST" });
+  alert(r.drafted + " follow-up draft(s) added to the queue for approval.");
+  loadQueue();
+};
+
+async function loadVisits() {
+  const v = await api("/api/admin/visits");
+  $("visitRows").innerHTML = v.map(x => `<tr><td><b>${RU.esc(x.slot)}</b></td><td>#${x.property_id} ${RU.esc(x.property_title)}</td>
+    <td>${RU.esc(x.name)}</td><td>${RU.esc(x.phone)}</td><td><span class="badge ${x.status === "booked" ? "brand" : x.status === "completed" ? "ok" : ""}">${x.status}</span></td>
+    <td>PKR ${(x.fee_pkr || 0).toLocaleString()}</td>
+    <td><select data-id="${x.id}" style="width:auto">${["booked", "completed", "no_show", "cancelled"].map(s => `<option ${s === x.status ? "selected" : ""}>${s}</option>`).join("")}</select></td></tr>`).join("") ||
+    '<tr><td colspan="7" class="muted">No visits booked yet.</td></tr>';
+}
+$("visitRows").onchange = async e => { await api("/api/admin/visits/" + e.target.dataset.id, { method: "PATCH", body: { status: e.target.value } }); loadVisits(); };
+
+async function loadListings() {
+  const p = await api("/api/admin/properties");
+  $("propRows").innerHTML = p.map(x => `<tr><td>${x.id}</td><td>${RU.esc(x.title)}</td><td>${RU.esc(x.area)}</td><td>${x.size_marla} marla</td>
+    <td>${RU.pkr(x.price)}</td><td>${x.installments ? `${x.min_down_payment_pct}% / ${x.max_months}m` : "cash"}</td>
+    <td><select data-id="${x.id}" style="width:auto">${["available", "reserved", "sold"].map(s => `<option ${s === x.status ? "selected" : ""}>${s}</option>`).join("")}</select></td></tr>`).join("");
+}
+$("propRows").onchange = async e => { await api("/api/admin/properties/" + e.target.dataset.id, { method: "PATCH", body: { status: e.target.value } }); };
+$("addForm").onsubmit = async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  ["size_marla", "price", "bedrooms", "min_down_payment_pct", "max_months"].forEach(k => f[k] = f[k] === "" ? null : Number(f[k]));
+  f.installments = f.installments === "true";
+  try { await api("/api/admin/properties", { body: f }); e.target.reset(); $("addErr").textContent = ""; loadListings(); }
+  catch (err) { $("addErr").textContent = err.message; }
+};
+$("uploadForm").onsubmit = async e => {
+  e.preventDefault();
+  const r = await api("/api/admin/properties/upload", { body: new FormData(e.target) });
+  $("uploadOut").innerHTML = `Added ${r.added} listing(s).` + (r.errors.length ? `<br><span class="err">${r.errors.map(RU.esc).join("<br>")}</span>` : "");
+  loadListings();
+};
+
+async function loadActivity() {
+  const [o, ev] = await Promise.all([api("/api/admin/outbox"), api("/api/admin/events")]);
+  $("outRows").innerHTML = o.map(x => `<tr><td class="small">${RU.esc(x.created_at)}</td><td>${RU.esc(x.lead_name || x.lead_id)}</td><td>${RU.esc(x.channel)}</td>
+    <td class="small">${RU.esc(x.message)}</td><td class="small">${RU.esc(x.approved_by)}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">Nothing sent yet.</td></tr>';
+  $("evRows").innerHTML = ev.map(x => `<tr><td class="small">${RU.esc(x.created_at)}</td><td><span class="badge ${x.kind === "guard_block" ? "hot" : ""}">${RU.esc(x.kind)}</span></td>
+    <td class="small">${RU.esc((x.user_id || "").slice(0, 18))}</td><td class="small">${RU.esc(x.detail)}</td></tr>`).join("");
+}
+
+function loadSettings() {
+  const url = location.origin + me.webhook.url;
+  $("webhook").textContent = `POST ${url}\nX-Webhook-Key: ${me.webhook.key}\nContent-Type: application/json\n\n{"name": "Usman", "phone": "0300-1234567", "source": "zameen",\n "message": "Is the 10 marla plot in Bahria still available? On installments?", "property_id": 514}`;
+  $("modelInfo").textContent = me.offline_model ? `Offline demo model (no ANTHROPIC_API_KEY set). Set the key to use ${me.model}.` : `Claude model: ${me.model}`;
+  $("testLead").onclick = async () => {
+    const r = await fetch(me.webhook.url, { method: "POST", headers: { "Content-Type": "application/json", "X-Webhook-Key": me.webhook.key },
+      body: JSON.stringify({ name: "Test Lead", phone: "0311-" + String(Math.floor(1e6 + Math.random() * 8e6)), source: "zameen", message: "Is the 10 marla plot in Bahria still available? On installments?", property_id: 514 }) });
+    $("testOut").classList.remove("hidden"); $("testOut").textContent = JSON.stringify(await r.json(), null, 2);
+  };
+}
+init();
+</script>
+</body>
+</html>

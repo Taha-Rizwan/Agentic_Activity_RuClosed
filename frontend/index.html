@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RUClosed — AI lead closer for real-estate agencies</title>
+  <meta name="description" content="RUClosed replies to every property lead within a minute, qualifies budget and timeline, works out installments and books site visits." />
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar"><div class="wrap">
+    <a class="logo" href="/"><span class="mark">RU</span><span><span class="ru">RU</span>Closed</span></a>
+    <nav><a href="#demo">Live demo</a><a href="#pricing">Pricing</a><a class="btn sm" href="/admin">Agency login</a></nav>
+  </div></header>
+
+  <main class="wrap">
+    <section class="hero">
+      <span class="badge brand">Track 3 · DealCloser for real estate</span>
+      <h1>Every Zameen &amp; OLX lead answered in under a minute.</h1>
+      <p class="lead">Agencies lose deals because leads arrive at 11pm and agents reply at 11am. RUClosed is an AI sales agent
+        that replies instantly, qualifies budget and timeline, shows <b>real</b> listings from your inventory, works out monthly
+        installments and books site visits — then hands hot leads to your team.</p>
+      <div class="cta">
+        <a class="btn primary" href="/a/capital-estates">Try the customer demo →</a>
+        <a class="btn" href="/admin">Open the agency dashboard</a>
+      </div>
+    </section>
+
+    <section class="grid features">
+      <div class="card pad"><h3>⚡ Instant replies, 24/7</h3><p class="muted">Website chat and a webhook for Zameen/OLX lead forms. First reply in seconds, not hours.</p></div>
+      <div class="card pad"><h3>🎯 Qualifies every lead</h3><p class="muted">Budget, timeline, area, size and installments captured automatically and scored hot / warm / cold.</p></div>
+      <div class="card pad"><h3>🧮 Installments, correctly</h3><p class="muted">Prices only come from your database. Down payment and monthly plan calculated by a tool, never guessed.</p></div>
+      <div class="card pad"><h3>🗓 Books site visits</h3><p class="muted">Real free slots, customer confirms, and the visit appears on your dashboard instantly.</p></div>
+      <div class="card pad"><h3>🛡 Safe by design</h3><p class="muted">Blocks prompt injection and off-topic chat, never leaks other clients, and a human approves every follow-up or discount.</p></div>
+      <div class="card pad"><h3>🧠 Remembers buyers</h3><p class="muted">Returning buyers are greeted with matches for what they wanted last time. No CNIC, income or phone in memory.</p></div>
+    </section>
+
+    <h2 class="section-title">How it works</h2>
+    <ol class="steps">
+      <li class="card pad"><b>Lead arrives</b><br><span class="muted">Website chat, Zameen.com or OLX form.</span></li>
+      <li class="card pad"><b>Guard + Qualifier</b><br><span class="muted">Safety check, then budget / timeline / area extracted and scored.</span></li>
+      <li class="card pad"><b>Sales agent + tools</b><br><span class="muted">Searches listings, calculates installments, offers slots, books visits.</span></li>
+      <li class="card pad"><b>Your team closes</b><br><span class="muted">Hot leads, visits and approvals waiting on the dashboard.</span></li>
+    </ol>
+
+    <h2 class="section-title" id="demo">Live demo agencies</h2>
+    <p class="muted">Two separate tenants with their own listings, leads and memory — data never crosses between them.</p>
+    <div class="grid features" id="agencies"></div>
+    <div class="card pad small">
+      <b>Demo admin logins</b> (synthetic data): <code>admin@capital.demo</code> / <code>demo123</code> &nbsp;·&nbsp;
+      <code>admin@lahore.demo</code> / <code>demo123</code>
+    </div>
+
+    <h2 class="section-title" id="pricing">Pricing</h2>
+    <div class="grid pricing">
+      <div class="card pad"><h3>Agency plan</h3><div class="price">PKR 15,000<span class="small muted"> / month</span></div>
+        <p class="muted">Unlimited chats, lead dashboard, approval queue, listings upload, reports.</p></div>
+      <div class="card pad"><h3>Pay per visit</h3><div class="price">PKR 1,000<span class="small muted"> / booked visit</span></div>
+        <p class="muted">Only pay when the AI books a real site visit. One closed 1-crore deal at 1% commission = PKR 1 lakh.</p></div>
+    </div>
+  </main>
+  <footer><div class="wrap">RUClosed · Group 5 · AI-4016 Agentic AI, FAST Islamabad · All listings and leads are synthetic demo data.</div></footer>
+  <script src="/assets/app.js"></script>
+  <script>
+    RU.api("/api/agencies").then(list => {
+      document.getElementById("agencies").innerHTML = list.map(a => `
+        <div class="card pad"><h3>${RU.esc(a.name)}</h3><p class="muted">${RU.esc(a.tagline || "")}<br>${RU.esc(a.city || "")}</p>
+        <a class="btn primary sm" href="/a/${RU.esc(a.slug)}">Open storefront →</a></div>`).join("");
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Listings — RUClosed</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar"><div class="wrap">
+    <a class="logo" id="agencyLogo" href="#"><span class="mark">🏠</span><span id="agencyName">Agency</span></a>
+    <nav><span class="small muted">Powered by <a href="/">RUClosed</a></span></nav>
+  </div></header>
+
+  <main class="wrap">
+    <section class="agency-head">
+      <h1 id="headline">Find your next property</h1>
+      <p class="muted" id="tagline"></p>
+    </section>
+    <form class="card filters" id="filters">
+      <div><label for="fArea">Area</label><select id="fArea"><option value="">Any area</option></select></div>
+      <div><label for="fType">Type</label><select id="fType"><option value="">Any type</option><option>plot</option><option>house</option><option>apartment</option><option>commercial</option></select></div>
+      <div><label for="fPrice">Max budget</label><select id="fPrice"><option value="">No limit</option>
+        <option value="7500000">75 lakh</option><option value="10000000">1 crore</option><option value="15000000">1.5 crore</option>
+        <option value="20000000">2 crore</option><option value="50000000">5 crore</option></select></div>
+      <div><label for="fSize">Size</label><select id="fSize"><option value="">Any size</option><option value="5">5 marla</option>
+        <option value="7">7 marla</option><option value="8">8 marla</option><option value="10">10 marla</option><option value="20">1 kanal</option></select></div>
+      <label class="check"><input type="checkbox" id="fInst" /> Installments</label>
+      <button class="btn primary" type="submit">Search</button>
+    </form>
+    <div class="grid listings" id="listings"></div>
+  </main>
+
+  <script src="/assets/app.js"></script>
+  <script src="/assets/chat.js"></script>
+  <script>
+    const slug = RU.slug();
+    let allAreas = new Set();
+    function card(p) {
+      return `<article class="card listing">
+        <div class="thumb t-${RU.esc(p.property_type)}"><span class="id">#${p.id}</span>${RU.icon(p.property_type)}</div>
+        <div class="body">
+          <div class="title">${RU.esc(p.title)}</div>
+          <div class="muted small">${RU.esc(p.block || "")}, ${RU.esc(p.city || "")}</div>
+          <div class="price-tag">${RU.pkr(p.price)}</div>
+          <div class="meta"><span class="badge">${p.size_marla} marla</span><span class="badge">${RU.esc(p.property_type)}</span>
+            ${p.bedrooms ? `<span class="badge">${p.bedrooms} bed</span>` : ""}
+            ${p.installments ? `<span class="badge ok">Installments</span>` : `<span class="badge">Cash</span>`}</div>
+          <div class="actions">
+            <a class="btn sm" href="/a/${slug}/p/${p.id}">Details</a>
+            <button class="btn primary sm" onclick="RUChat.open('I want to book a site visit for #${p.id}')">Book visit</button>
+          </div>
+        </div></article>`;
+    }
+    async function load() {
+      const q = new URLSearchParams();
+      const v = id => document.getElementById(id).value;
+      if (v("fArea")) q.set("area", v("fArea"));
+      if (v("fType")) q.set("type", v("fType"));
+      if (v("fPrice")) q.set("max_price", v("fPrice"));
+      if (v("fSize")) q.set("size", v("fSize"));
+      if (document.getElementById("fInst").checked) q.set("installments", "true");
+      const list = await RU.api(`/api/a/${slug}/properties?` + q);
+      if (!allAreas.size) {
+        list.forEach(p => allAreas.add(p.area));
+        document.getElementById("fArea").innerHTML += [...allAreas].sort().map(a => `<option>${RU.esc(a)}</option>`).join("");
+      }
+      document.getElementById("listings").innerHTML = list.length ? list.map(card).join("") :
+        `<div class="card pad">No listings match. <a href="#" onclick="RUChat.open('I need help finding a property');return false">Ask the assistant</a> — it can log your requirement.</div>`;
+    }
+    RU.api(`/api/a/${slug}`).then(a => {
+      document.title = a.name + " — Listings";
+      document.getElementById("agencyName").textContent = a.name;
+      document.getElementById("agencyLogo").href = "/a/" + slug;
+      document.getElementById("headline").textContent = a.name + ": find your next property";
+      document.getElementById("tagline").textContent = (a.tagline || "") + " · " + (a.city || "");
+    });
+    document.getElementById("filters").onsubmit = e => { e.preventDefault(); load(); };
+    load();
+    if (window.innerWidth > 1000) setTimeout(() => RUChat.open(), 400);
+  </script>
+</body>
+</html>
