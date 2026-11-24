@@ -304,8 +304,9 @@ def get_or_create_lead(agency_id: int, user_id: str, source: str = "website") ->
         lead = one(c.execute("SELECT * FROM leads WHERE agency_id = ? AND user_id = ?", (agency_id, user_id)))
         if lead:
             return lead
-        c.execute("INSERT INTO leads (agency_id, user_id, source, created_at, updated_at) VALUES (?,?,?,?,?)",
-                  (agency_id, user_id, source, now(), now()))
+        # ON CONFLICT: two concurrent first messages from the same user must not crash on UNIQUE(agency_id, user_id)
+        c.execute("INSERT INTO leads (agency_id, user_id, source, created_at, updated_at) VALUES (?,?,?,?,?) "
+                  "ON CONFLICT (agency_id, user_id) DO NOTHING", (agency_id, user_id, source, now(), now()))
         return one(c.execute("SELECT * FROM leads WHERE agency_id = ? AND user_id = ?", (agency_id, user_id)))
 
 
