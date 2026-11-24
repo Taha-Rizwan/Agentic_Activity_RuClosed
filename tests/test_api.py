@@ -139,3 +139,24 @@ def test_listing_upload_and_stats():
     s = client.get("/api/admin/stats", headers=H(a)).json()
     assert s["total_leads"] >= 1 and "revenue" in s
     assert client.get("/api/admin/report.csv", headers=H(a)).text.startswith("lead_id")
+
+
+def test_graded_agent_api_contract():
+    """Hackathon contract: GET /health -> ok; POST /chat -> reply, tool_calls, tokens {in, out}."""
+    h = client.get("/health")
+    assert h.status_code == 200 and h.text == "ok"
+    r = client.post("/chat", json={"user_id": "grader-1", "thread_id": "t1",
+                                   "message": "10 marla plot in Bahria under 2 crore"})
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) >= {"reply", "tool_calls", "tokens"}
+    assert set(body["tokens"]) == {"in", "out"}
+    assert any(c["name"] == "search_properties" for c in body["tool_calls"])
+    assert all({"name", "args"} <= set(c) for c in body["tool_calls"])
+
+
+def test_graded_api_tolerates_numeric_and_missing_fields():
+    r = client.post("/chat", json={"user_id": 12345, "thread_id": 7, "message": "hello"})
+    assert r.status_code == 200 and r.json()["reply"]
+    empty = client.post("/chat", json={"user_id": "grader-2", "thread_id": "t9", "message": ""}).json()
+    assert empty["tool_calls"] == [] and empty["reply"]

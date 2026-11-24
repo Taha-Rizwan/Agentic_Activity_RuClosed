@@ -229,7 +229,7 @@ Own cases: 10/10 (100%) · Attack tests: 5/5 (100%) · Overall: 15/15 (100%) · 
 
 Against the live API: `python -m benchmark.run_benchmark --url=https://ruclosed.onrender.com`.
 
-Plus **27 pytest tests** (`pytest`) covering parsers, safety rules, installment maths, the middleware stack,
+Plus **29 pytest tests** (`pytest`), including the graded `/chat` + `/health` contract, covering parsers, safety rules, installment maths, the middleware stack,
 the booking flow, memory, approvals, the webhook, and multi-tenant isolation.
 
 ---

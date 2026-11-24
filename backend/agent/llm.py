@@ -157,7 +157,7 @@ class OfflineDealModel(BaseChatModel):
                 intro = "Here are real listings from our database that match:\n"
                 if s.startswith("No "):
                     head, s = s.split("\n", 1)
-                    intro = ("Nothing matches exactly, but here are the closest real options in our database "
+                    intro = ("I couldn't find an exact match in our database, but here are the closest real options "
                              "(a little outside your budget or size):\n")
                 if p.get("from_memory") and not parsing.extract_profile(text):
                     intro = (f"Welcome back! Based on what you were looking for last time "

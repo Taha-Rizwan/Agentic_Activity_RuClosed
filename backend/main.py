@@ -76,9 +76,10 @@ def health_plain():
 
 
 class AgentChatIn(BaseModel):
-    user_id: str = "anonymous"
-    thread_id: str = "default"
-    message: str = ""
+    # Lenient on purpose: the graded client may send numeric ids or leave fields out. Coerced below.
+    user_id: str | int | None = "anonymous"
+    thread_id: str | int | None = "default"
+    message: str | int | None = ""
     agency: str | None = None   # optional tenant slug; defaults to DEFAULT_AGENCY
 
 
@@ -88,13 +89,14 @@ def agent_chat(body: AgentChatIn, request: Request):
     user_id keys long-term memory, thread_id keys short-term memory; both are scoped inside the agency."""
     rate_limit(request, per_minute=600)
     agency = db.get_agency_by_slug(body.agency or config.DEFAULT_AGENCY) or db.get_agency_by_slug(config.DEFAULT_AGENCY)
-    user_id = (body.user_id or "anonymous").strip()[:100] or "anonymous"
-    message = (body.message or "").strip()
+    user_id = str(body.user_id or "anonymous").strip()[:100] or "anonymous"
+    thread_id = str(body.thread_id or "default")
+    message = str(body.message or "").strip()
     if not message:
         return {"reply": "Hi! Tell me what you're looking for, e.g. \"10 marla plot in Bahria under 2 crore\".",
                 "tool_calls": [], "tokens": {"in": 0, "out": 0}}
     try:
-        r = service.chat(agency, user_id, body.thread_id or "default", message[:4000], source="api",
+        r = service.chat(agency, user_id, thread_id, message[:4000], source="api",
                          confirm_bookings=False)
         return {"reply": r["reply"], "tool_calls": r["tool_calls"], "tokens": r["tokens"]}
     except Exception as e:  # never a 500 for the grader; log and answer politely
