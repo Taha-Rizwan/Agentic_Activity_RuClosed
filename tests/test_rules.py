@@ -135,3 +135,12 @@ def test_discount_request_is_on_domain_not_injection():
         assert safety.check_message(msg) is None          # not blocked by the rules
         assert safety.is_on_domain(msg)                   # so the model classifier is never asked
     assert safety.risk_flag("Can you give me a 10% discount on #514?") == "discount"
+
+
+def test_price_guard_allows_echoing_customer_discount_request(capital):
+    ctx = DealContext(agency_id=capital["id"], lead_id=0, user_id="t")
+    asked = "Can you give me a 10% discount on #514?\n#514 ... PKR 1.85 crore"
+    ok = check_reply("I can't offer discounts myself; your 10% discount request is with an agent.", asked, ctx)
+    assert "flagged" not in ok and "10% discount" in ok
+    bad = check_reply("Good news, I can give you 15% off today!", asked, ctx)
+    assert "flagged" in bad and "15% off" not in bad

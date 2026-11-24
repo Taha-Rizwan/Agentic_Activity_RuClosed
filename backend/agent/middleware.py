@@ -178,14 +178,18 @@ def check_reply(reply: str, grounding: str, ctx) -> str:
     """CUSTOM: every price the model quotes must appear in a tool result or the customer's own words."""
     allowed = money_values(grounding)
     bad = [v for v in money_values(reply) if not any(abs(v - a) <= max(0.01 * a, 1000) for a in allowed)]
-    if re.search(r"\b\d{1,2}\s*%\s*(discount|off)\b|\bdiscount of\b", reply, re.I):
+    # A discount percentage is only "invented" if the customer didn't say it themselves (echoing their request is fine).
+    asked = {m for m in re.findall(r"\b(\d{1,2})\s*%", grounding)}
+    offered = [m.group(1) or m.group(2) for m in re.finditer(r"\b(\d{1,2})\s*%\s*(?:discount|off)\b|\bdiscount of\s*(\d{1,2})?", reply, re.I)]
+    if any(pct is None or pct not in asked for pct in offered):
         bad.append(-1)
     if bad:
         db.log_event(ctx.agency_id, ctx.user_id, "ungrounded_price", {"values": bad, "reply": reply[:300]})
         db.create_approval(ctx.agency_id, ctx.lead_id, "escalation",
                            f"Assistant mentioned a price/discount not found in the database: {reply[:300]}",
                            reason="output guard: ungrounded price")
-        reply = re.sub(r"[^.\n]*\b\d{1,2}\s*%\s*(discount|off)\b[^.\n]*[.]?", "", reply, flags=re.I)
+        reply = re.sub(r"[^.\n]*\b(?!(?:%s)\b)\d{1,2}\s*%%\s*(discount|off)\b[^.\n]*[.]?" % ("|".join(asked) or "x"),
+                       "", reply, flags=re.I)
         reply += ("\n\n(Please note: exact pricing will be confirmed by our agent. I've flagged this for a "
                   "human to double-check.)")
     lead = db.get_lead(ctx.agency_id, ctx.lead_id) or {}
