@@ -1,7 +1,7 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://ruclosed.onrender.com/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://ruclosed-api.onrender.com/api/:path*" },
     { "source": "/a/:slug/p/:id", "destination": "/property" },
     { "source": "/a/:slug", "destination": "/agency" },
     { "source": "/admin/dashboard", "destination": "/admin/dashboard" },

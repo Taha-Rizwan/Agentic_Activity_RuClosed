@@ -10,7 +10,7 @@ jobs:
     steps:
       - run: |
           for i in 1 2 3; do
-            curl -fsS -m 90 https://ruclosed.onrender.com/health && exit 0
+            curl -fsS -m 90 https://ruclosed-api.onrender.com/health && exit 0
             sleep 20
           done
           exit 1

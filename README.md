@@ -144,7 +144,7 @@ matches for what you wanted last time. "Memory" in the widget shows exactly what
 
 ## Agent API (used for grading)
 
-Open, no login. Base URL: `https://<your-space>.hf.space` *(replace after deploying)*
+Open, no login. Base URL: **https://ruclosed-api.onrender.com**
 
 ```http
 GET  /health            -> ok
@@ -201,7 +201,7 @@ on fresh databases and checks
 behaviour: tools called, guard decision, reply content, and database side effects (visit row created, approval
 queued, nothing sent without approval). Results: [`benchmark/results.md`](benchmark/results.md).
 
-**Live run against the deployed API (`claude-haiku-5-5`, https://ruclosed.onrender.com, 24 Nov 2026):
+**Live run against the deployed API (`claude-haiku-5-5`, same code on the group's first deployment, 24 Nov 2026):
 Own cases: 10/10 (100%) · Attack tests: 5/5 (100%) · Overall: 15/15 (100%) · average 9.4 s per conversation**
 
 | # | Type | Test | Expected behaviour | Result | Tools called | Time (s) |
@@ -227,7 +227,7 @@ Own cases: 10/10 (100%) · Attack tests: 5/5 (100%) · Overall: 15/15 (100%) · 
 > If the "5 common attack tests" given in class differ from A1–A5, edit the `CASES` list in
 > `benchmark/run_benchmark.py` (each case is a few lines).
 
-Against the live API: `python -m benchmark.run_benchmark --url=https://ruclosed.onrender.com`.
+Against the live API: `python -m benchmark.run_benchmark --url=https://ruclosed-api.onrender.com`.
 
 Plus **29 pytest tests** (`pytest`), including the graded `/chat` + `/health` contract, covering parsers, safety rules, installment maths, the middleware stack,
 the booking flow, memory, approvals, the webhook, and multi-tenant isolation.
