@@ -8,7 +8,7 @@ Members: 23i-0670 · 23i-0664 · 23i-0611
 > timeline, shows real listings, works out monthly installments and books site visits** — then hands hot leads
 > to the agency's team on a dashboard.
 
-**Website:** https://ruclosed.vercel.app · **Agent API:** https://ruclosed.onrender.com (`POST /chat`, `GET /health`) · Admin demo login: `admin@capital.demo` / `demo123`
+**Website:** https://ruclosed-one.vercel.app · **Agent API:** https://ruclosed-api.onrender.com (`POST /chat`, `GET /health`) · Admin demo login: `admin@capital.demo` / `demo123`
 
 | Customer storefront + agent | Agency dashboard |
 |---|---|
