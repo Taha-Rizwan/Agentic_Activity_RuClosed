@@ -203,8 +203,18 @@ def price_guard(state, runtime):
         return None
     messages = state["messages"]
     li = _turn_start(messages)
-    human = text_of(messages[li]) if li >= 0 else ""
-    grounding = human + "\n" + "\n".join(text_of(m) for m in messages if isinstance(m, ToolMessage))
+    # Grounded = said by the customer (any turn), returned by a tool, or remembered for this customer
+    # (profile / long-term memory budget), so a remembered "under 2 crore" is not flagged as invented.
+    said = "\n".join(text_of(m) for m in messages if isinstance(m, (HumanMessage, ToolMessage)))
+    remembered = [state.get("profile") or {}]
+    store, ctx = runtime.store, runtime.context
+    if store is not None:
+        prefs = store.get(memory_namespace(ctx.agency_id, ctx.user_id), "preferences")
+        if prefs and prefs.value:
+            remembered.append(prefs.value)
+    budgets = [db.fmt_pkr(p[k]) for p in remembered for k in ("budget_max", "budget_min")
+               if isinstance(p.get(k), (int, float)) and p.get(k)]
+    grounding = said + "\n" + "\n".join(budgets)
     reply = text_of(last)
     fixed = check_reply(reply, grounding, runtime.context)
     if fixed == reply and isinstance(last.content, str):

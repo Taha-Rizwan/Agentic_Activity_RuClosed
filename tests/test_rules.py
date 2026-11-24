@@ -108,3 +108,22 @@ def test_slot_takes_several_buyers(capital):
     assert slot in available_slots(capital["id"], 515)          # still open for other buyers
     assert slot not in db.booked_slots(capital["id"], 515) or False
     assert slot in db.booked_slots(capital["id"], 515, capacity=1)  # full when capacity is 1
+
+
+def test_price_guard_trusts_remembered_budget(capital):
+    """A budget from long-term memory ('under your 2 crore budget') is grounded, not an invented price."""
+    from types import SimpleNamespace
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.store.memory import InMemoryStore
+    from backend.agent.context import memory_namespace
+    from backend.agent.middleware import price_guard
+    ctx = DealContext(agency_id=capital["id"], lead_id=0, user_id="mem-user")
+    store = InMemoryStore()
+    store.put(memory_namespace(ctx.agency_id, ctx.user_id), "preferences", {"budget_max": 20_000_000})
+    state = {"messages": [HumanMessage("anything new for me?"), AIMessage("Both are under your 2 crore budget.")],
+             "profile": {}}
+    out = price_guard.after_model(state, SimpleNamespace(store=store, context=ctx))
+    assert out is None  # nothing flagged
+    state["messages"][-1] = AIMessage("This one is only 1.2 crore.")
+    out = price_guard.after_model(state, SimpleNamespace(store=store, context=ctx))
+    assert out and "flagged" in out["messages"][0].content  # still catches invented prices

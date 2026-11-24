@@ -49,10 +49,20 @@
     $("chatTitle").textContent = r.agency.name + " assistant";
   }
 
+  // Minimal, safe markdown for bot replies: escape first, then **bold**, *italic* and "- " bullets.
+  function md(text) {
+    return RU.esc(text || "")
+      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+      .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<i>$2</i>")
+      .replace(/^\s*[-*] /gm, "• ")
+      .replace(/^#{1,4} /gm, "");
+  }
+
   function add(role, text, extra = {}) {
     const d = document.createElement("div");
     d.className = "msg " + (role === "user" ? "user" : "bot") + (extra.blocked ? " blocked" : "");
-    d.textContent = text;
+    if (role === "user") d.textContent = text;
+    else d.innerHTML = md(text);
     if (extra.tools && extra.tools.length) {
       const t = document.createElement("div"); t.className = "tools";
       t.innerHTML = extra.tools.map(x => `<span>⚙ ${RU.esc(x)}</span>`).join("");
