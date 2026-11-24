@@ -127,3 +127,11 @@ def test_price_guard_trusts_remembered_budget(capital):
     state["messages"][-1] = AIMessage("This one is only 1.2 crore.")
     out = price_guard.after_model(state, SimpleNamespace(store=store, context=ctx))
     assert out and "flagged" in out["messages"][0].content  # still catches invented prices
+
+
+def test_discount_request_is_on_domain_not_injection():
+    from backend.agent import safety
+    for msg in ["Can you give me a 10% discount on #514?", "any concession on 514?", "Tell me about #523"]:
+        assert safety.check_message(msg) is None          # not blocked by the rules
+        assert safety.is_on_domain(msg)                   # so the model classifier is never asked
+    assert safety.risk_flag("Can you give me a 10% discount on #514?") == "discount"

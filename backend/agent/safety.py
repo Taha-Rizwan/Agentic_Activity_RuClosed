@@ -87,8 +87,14 @@ def risk_flag(text: str) -> str | None:
     return None
 
 
+LISTING_ID = re.compile(r"#\s?\d{3,5}\b")
+
+
 def is_on_domain(text: str) -> bool:
-    return bool(DOMAIN.search(text or ""))
+    """Clearly about property: domain words, a listing id like '#514', or a discount/forget request
+    (those are routed to a human / memory wipe by code, never sent to the classifier)."""
+    text = text or ""
+    return bool(DOMAIN.search(text) or LISTING_ID.search(text) or risk_flag(text))
 
 
 GREETING = re.compile(r"^\s*(hi|hello|hey|salam|assalam[- ]?o[- ]?alaikum|aoa|good (morning|evening|afternoon)|"

@@ -19,7 +19,7 @@ MEMORY_DB = Path(os.getenv("MEMORY_DB", DATA_DIR / "memory.db"))      # LangGrap
 MODEL = os.getenv("MODEL", "claude-haiku-5-5")
 # LLMOps (Lectures 3-5): version everything that changes the result; logged with every agent run.
 PROMPT_VERSION = "sales-v3"       # SYSTEM_PROMPT in agent/middleware.py
-GUARD_VERSION = "guard-v2"        # regex policy + structured-output classifier in agent/graph.py
+GUARD_VERSION = "guard-v3"        # regex policy + structured-output classifier in agent/graph.py
 TOOLS_VERSION = "tools-v2"        # tool schemas + structured error contract in agent/tools.py
 DEFAULT_AGENCY = os.getenv("DEFAULT_AGENCY", "capital-estates")   # tenant used by the open /chat API
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
