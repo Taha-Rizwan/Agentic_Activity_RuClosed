@@ -32,6 +32,9 @@ TOKEN_TTL_HOURS = int(os.getenv("TOKEN_TTL_HOURS", "720"))
 KEEP_LAST_MESSAGES = int(os.getenv("KEEP_LAST_MESSAGES", "12"))
 SUMMARISE_AFTER = int(os.getenv("SUMMARISE_AFTER", "16"))
 
+# Site visits are group showings: max buyers per property per slot
+VISIT_SLOT_CAPACITY = int(os.getenv("VISIT_SLOT_CAPACITY", "20"))
+
 # Business model (canvas box 3)
 SUBSCRIPTION_PKR = 15000
 PER_VISIT_PKR = 1000

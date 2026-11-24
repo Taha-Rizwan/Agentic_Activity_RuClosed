@@ -98,3 +98,13 @@ def test_middleware_stack_shape():
     kinds = {type(m).__name__ for m in build_middleware()}
     assert {"PIIMiddleware", "SummarizationMiddleware", "ModelCallLimitMiddleware",
             "ToolCallLimitMiddleware", "ToolRetryMiddleware"} <= kinds
+
+
+def test_slot_takes_several_buyers(capital):
+    from backend import db
+    lead = db.get_or_create_lead(capital["id"], "slot-test-user")
+    slot = available_slots(capital["id"], 515)[0]
+    db.create_visit(capital["id"], lead["id"], 515, slot, "A", "03001234567")
+    assert slot in available_slots(capital["id"], 515)          # still open for other buyers
+    assert slot not in db.booked_slots(capital["id"], 515) or False
+    assert slot in db.booked_slots(capital["id"], 515, capacity=1)  # full when capacity is 1

@@ -1,0 +1,16 @@
+name: keep-alive
+# Render's free plan sleeps after 15 min idle; ping the agent API so evaluation never hits a cold start.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for i in 1 2 3; do
+            curl -fsS -m 90 https://ruclosed.onrender.com/health && exit 0
+            sleep 20
+          done
+          exit 1

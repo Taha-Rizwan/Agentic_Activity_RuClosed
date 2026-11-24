@@ -168,7 +168,8 @@
           "search_properties"
         ],
         "grounded": true,
-        "reply_not_re": "30 lakh.*available"
+        "reply_re": "(?i)(couldn't|could not|can't|cannot|don't|do not|no)\\b.{0,60}(find|have|match|listing)",
+        "reply_not_re": "(?i)(here is|found|we have|available:).{0,40}1 kanal.{0,60}(under|for|at) (2\\d|30) lakh"
       }
     },
     {

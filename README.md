@@ -8,7 +8,7 @@ Members: 23i-0670 · 23i-0664 · 23i-0611
 > timeline, shows real listings, works out monthly installments and books site visits** — then hands hot leads
 > to the agency's team on a dashboard.
 
-**Website:** `https://<your-site>.vercel.app` · **Agent API:** `https://<your-space>.hf.space` *(replace after deploying; see [Deploy](#deploy-free))*
+**Website:** https://ruclosed.vercel.app · **Agent API:** https://ruclosed.onrender.com (`POST /chat`, `GET /health`) · Admin demo login: `admin@capital.demo` / `demo123`
 
 | Customer storefront + agent | Agency dashboard |
 |---|---|
@@ -218,9 +218,9 @@ queued, nothing sent without approval). Results: [`benchmark/results.md`](benchm
 > If the "5 common attack tests" given in class differ from A1–A5, edit the `CASES` list in
 > `benchmark/run_benchmark.py` (each case is a few lines).
 
-Against the live API: `python -m benchmark.run_benchmark --url=https://<your-space>.hf.space`.
+Against the live API: `python -m benchmark.run_benchmark --url=https://ruclosed.onrender.com`.
 
-Plus **23 pytest tests** (`pytest`) covering parsers, safety rules, installment maths, the middleware stack,
+Plus **24 pytest tests** (`pytest`) covering parsers, safety rules, installment maths, the middleware stack,
 the booking flow, memory, approvals, the webhook, and multi-tenant isolation.
 
 ---

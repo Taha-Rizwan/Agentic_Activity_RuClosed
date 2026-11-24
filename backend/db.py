@@ -348,11 +348,15 @@ def stale_leads(agency_id: int, hours: int = 24) -> list[dict]:
 
 # ── visits ──
 
-def booked_slots(agency_id: int, property_id: int) -> set[str]:
+def booked_slots(agency_id: int, property_id: int, capacity: int | None = None) -> set[str]:
+    """Slots that are FULL. A site visit is a group showing: the agent shows the plot to up to
+    VISIT_SLOT_CAPACITY buyers in the same slot, so one booking does not block other customers."""
+    from backend import config
+    cap = capacity or config.VISIT_SLOT_CAPACITY
     with conn() as c:
         return {r[0] for r in c.execute(
-            "SELECT slot FROM visits WHERE agency_id = ? AND property_id = ? AND status = 'booked'",
-            (agency_id, property_id))}
+            "SELECT slot FROM visits WHERE agency_id = ? AND property_id = ? AND status = 'booked' "
+            "GROUP BY slot HAVING COUNT(*) >= ?", (agency_id, property_id, cap))}
 
 
 def create_visit(agency_id: int, lead_id: int, property_id: int, slot: str, name: str, phone: str) -> int:
